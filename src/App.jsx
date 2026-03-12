@@ -59,7 +59,7 @@ const css = `
   tr:last-child td{border-bottom:none}
   tr:hover td{background:#f8faff}
   .bar-row{display:flex;align-items:center;gap:8px;margin-bottom:8px}
-  .bar-label{font-size:12px;color:#1a2535;font-weight:600;min-width:130px;flex-shrink:0}
+  .bar-label{font-size:12px;color:#1a2535;font-weight:600;min-width:140px;max-width:140px;flex-shrink:0;word-break:break-word;line-height:1.3}
   .bar-track{flex:1;background:#f4f7fb;border-radius:99px;height:10px;overflow:hidden}
   .bar-fill{height:100%;border-radius:99px;transition:width 0.5s ease}
   .bar-val{font-size:12px;font-weight:800;color:#0d2137;min-width:40px;text-align:right;font-family:'DM Mono',monospace}
@@ -350,170 +350,228 @@ function PublicTabs({ active, setActive }) {
 
 /* ── STATISTIK DRILL-DOWN ── */
 function PageStatistik({ pthList, prodiList, stats }) {
-  const [drill,setDrill]=useState(null);
-  const {isMobile}=useBreakpoint();
-  const {mhs,dosen,alumni,penelitian}=stats;
-  const shortName = n => n.replace(/^(STAI|STIT|STIE|STIS|IAIH|STIKMA|IAI)\s*/i,"").substring(0,18);
+  const [drill, setDrill] = useState(null);
+  const { isMobile } = useBreakpoint();
+  const { mhs, dosen, alumni, penelitian } = stats;
 
-  if(drill==="alumni") return (
+  const truncName = n => n.length > 22 ? n.substring(0, 22) + "…" : n;
+
+  /* ── Detail Alumni ── */
+  if (drill === "alumni") return (
     <div className="fade-up">
-      <BackBtn onClick={()=>setDrill(null)}/>
-      <SectionTitle title="👨‍🎓 Detail Alumni" sub="Sebaran alumni kader dan non-kader per PTH"/>
-      <div className="stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:20}}>
-        <StatCard icon="👨‍🎓" value={alumni.total.toLocaleString("id-ID")} label="Total Alumni" color={T.navy}/>
-        <StatCard icon="🟢" value={alumni.kader.toLocaleString("id-ID")} label="Alumni Kader" color={T.green}/>
-        <StatCard icon="🔵" value={alumni.non_kader.toLocaleString("id-ID")} label="Alumni Non-Kader" color={T.blue}/>
+      <BackBtn onClick={() => setDrill(null)} />
+      <SectionTitle title="👨‍🎓 Alumni" sub="Jumlah alumni kader dan non-kader per PTH" />
+      <div className="stat-grid" style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, marginBottom:20 }}>
+        <StatCard icon="👨‍🎓" value={alumni.total.toLocaleString("id-ID")} label="Jumlah Total Alumni" color={T.navy} />
+        <StatCard icon="🟢" value={alumni.kader.toLocaleString("id-ID")} label="Jumlah Alumni Kader" color={T.green} />
+        <StatCard icon="🔵" value={alumni.non_kader.toLocaleString("id-ID")} label="Jumlah Alumni Non-Kader" color={T.blue} />
       </div>
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12}}>
-        <div className="card" style={{padding:20}}>
-          <h3 style={{fontWeight:800,color:T.navy,marginBottom:14,fontSize:14}}>Kader vs Non-Kader</h3>
-          <BarChart data={[{label:"Kader",value:alumni.kader,color:T.green},{label:"Non-Kader",value:alumni.non_kader,color:T.blue}]}/>
-        </div>
-        <div className="card" style={{padding:20}}>
-          <h3 style={{fontWeight:800,color:T.navy,marginBottom:14,fontSize:14}}>Per PTH</h3>
-          <BarChart color={T.green} data={pthList.map(p=>({label:shortName(p.nama),value:(p.latest_kerjasama?.alumni_kader||0)+(p.latest_kerjasama?.alumni_non_kader||0)}))}/>
-        </div>
+      <div className="card" style={{ padding:20 }}>
+        <h3 style={{ fontWeight:800, color:T.navy, marginBottom:14, fontSize:14 }}>Kader vs Non-Kader</h3>
+        <BarChart data={[
+          { label:"Alumni Kader", value:alumni.kader, color:T.green },
+          { label:"Alumni Non-Kader", value:alumni.non_kader, color:T.blue },
+        ]} />
       </div>
-      <div className="card" style={{padding:20,marginTop:12}}>
-        <h3 style={{fontWeight:800,color:T.navy,marginBottom:12,fontSize:14}}>Detail per PTH</h3>
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>PTH</th><th>Kader</th><th>Non-Kader</th><th>Total</th></tr></thead>
-            <tbody>
-              {pthList.map(p=>{
-                const k=p.latest_kerjasama?.alumni_kader||0,nk=p.latest_kerjasama?.alumni_non_kader||0;
-                return <tr key={p.id}><td style={{fontWeight:700,fontSize:12}}>{p.nama}</td><td style={{color:T.green,fontWeight:800,fontFamily:"'DM Mono',monospace"}}>{k}</td><td style={{color:T.blue,fontWeight:800,fontFamily:"'DM Mono',monospace"}}>{nk}</td><td style={{fontWeight:900,fontFamily:"'DM Mono',monospace"}}>{k+nk}</td></tr>;
-              })}
-            </tbody>
-          </table>
+    </div>
+  );
+
+  /* ── Detail Mahasiswa ── */
+  if (drill === "mahasiswa") return (
+    <div className="fade-up">
+      <BackBtn onClick={() => setDrill(null)} />
+      <SectionTitle title="🎓 Mahasiswa" sub="Data mahasiswa seluruh PTH" />
+      {/* Baris 1: Total + per PTH */}
+      <div className="stat-grid" style={{ display:"grid", gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)", gap:12, marginBottom:16 }}>
+        <StatCard icon="🎓" value={mhs.total_aktif.toLocaleString("id-ID")} label="Jumlah Total Mahasiswa" color={T.navy} />
+        <StatCard icon="🆕" value={mhs.total_baru.toLocaleString("id-ID")} label="Total Mahasiswa Baru" color={T.cyan} />
+        <StatCard icon="🟢" value={mhs.aktif_kader.toLocaleString("id-ID")} label="Kader Aktif" color={T.green} />
+        <StatCard icon="🏆" value={(mhs.prestasi_dn + mhs.prestasi_int).toLocaleString("id-ID")} label="Prestasi Total" color={T.purple} />
+      </div>
+      <div style={{ display:"grid", gridTemplateColumns:isMobile?"1fr":"1fr 1fr", gap:12, marginBottom:12 }}>
+        {/* Jumlah Mahasiswa per PTH */}
+        <div className="card" style={{ padding:20 }}>
+          <h3 style={{ fontWeight:800, color:T.navy, marginBottom:12, fontSize:14 }}>Jumlah Mahasiswa per PTH</h3>
+          <BarChart color={T.blue} data={pthList.map(p => ({
+            label: truncName(p.nama),
+            value: (p.prodi||[]).reduce((s,pr) => s + (pr.latest_mhs?.total_mhs_aktif||0), 0)
+          }))} />
+        </div>
+        {/* Kader Aktif per PTH */}
+        <div className="card" style={{ padding:20 }}>
+          <h3 style={{ fontWeight:800, color:T.navy, marginBottom:12, fontSize:14 }}>Jumlah Mahasiswa Kader Aktif per PTH</h3>
+          <BarChart color={T.green} data={pthList.map(p => ({
+            label: truncName(p.nama),
+            value: (p.prodi||[]).reduce((s,pr) => s + (pr.latest_mhs?.mhs_aktif_kader||0), 0)
+          }))} />
+        </div>
+        {/* Mahasiswa Baru per PTH */}
+        <div className="card" style={{ padding:20 }}>
+          <h3 style={{ fontWeight:800, color:T.navy, marginBottom:12, fontSize:14 }}>Jumlah Total Mahasiswa Baru per PTH</h3>
+          <BarChart color={T.cyan} data={pthList.map(p => ({
+            label: truncName(p.nama),
+            value: (p.prodi||[]).reduce((s,pr) => s + (pr.latest_mhs?.total_mhs_baru||0), 0)
+          }))} />
+        </div>
+        {/* Mahasiswa Baru Kader per PTH */}
+        <div className="card" style={{ padding:20 }}>
+          <h3 style={{ fontWeight:800, color:T.navy, marginBottom:12, fontSize:14 }}>Jumlah Mahasiswa Baru Kader per PTH</h3>
+          <BarChart color={T.teal} data={pthList.map(p => ({
+            label: truncName(p.nama),
+            value: (p.prodi||[]).reduce((s,pr) => s + (pr.latest_mhs?.mhs_baru_kader||0), 0)
+          }))} />
+        </div>
+        {/* Prestasi Total */}
+        <div className="card" style={{ padding:20 }}>
+          <h3 style={{ fontWeight:800, color:T.navy, marginBottom:12, fontSize:14 }}>Prestasi Mahasiswa Total</h3>
+          <BarChart data={[
+            { label:"Dalam Negeri", value:mhs.prestasi_dn, color:T.blue },
+            { label:"Internasional", value:mhs.prestasi_int, color:T.purple },
+          ]} />
+        </div>
+        {/* Prestasi per PTH */}
+        <div className="card" style={{ padding:20 }}>
+          <h3 style={{ fontWeight:800, color:T.navy, marginBottom:12, fontSize:14 }}>Prestasi Mahasiswa per PTH</h3>
+          <BarChart color={T.purple} data={pthList.map(p => ({
+            label: truncName(p.nama),
+            value: (p.prodi||[]).reduce((s,pr) => s + (pr.latest_mhs?.prestasi_dalam_negeri||0) + (pr.latest_mhs?.prestasi_internasional||0), 0)
+          }))} />
         </div>
       </div>
     </div>
   );
 
-  if(drill==="mahasiswa") return (
+  /* ── Detail Dosen ── */
+  if (drill === "dosen") return (
     <div className="fade-up">
-      <BackBtn onClick={()=>setDrill(null)}/>
-      <SectionTitle title="🎓 Detail Mahasiswa" sub="Mahasiswa aktif, baru, kader, dan prestasi per PTH"/>
-      <div className="stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12,marginBottom:20}}>
-        <StatCard icon="🎓" value={mhs.total_aktif.toLocaleString("id-ID")} label="Total Aktif" color={T.navy}/>
-        <StatCard icon="🆕" value={mhs.total_baru.toLocaleString("id-ID")} label="Mahasiswa Baru" color={T.blue}/>
-        <StatCard icon="🟢" value={mhs.aktif_kader.toLocaleString("id-ID")} label="Kader Aktif" color={T.green}/>
-        <StatCard icon="🏆" value={(mhs.prestasi_dn+mhs.prestasi_int).toLocaleString("id-ID")} label="Total Prestasi" color={T.purple}/>
+      <BackBtn onClick={() => setDrill(null)} />
+      <SectionTitle title="👩‍🏫 Dosen" sub="Data dosen seluruh PTH" />
+      <div style={{ display:"grid", gridTemplateColumns:isMobile?"1fr":"1fr 1fr 1fr", gap:12, marginBottom:16 }}>
+        {/* Berdasarkan Level Kaderisasi */}
+        <div className="card" style={{ padding:20 }}>
+          <h3 style={{ fontWeight:800, color:T.navy, marginBottom:12, fontSize:14 }}>Berdasarkan Level Kaderisasi</h3>
+          <BarChart data={[
+            { label:"Dosen Kader", value:dosen.kader, color:T.green },
+            { label:"Dosen Non-Kader", value:dosen.non_kader, color:T.muted },
+          ]} />
+          <div style={{ marginTop:12, paddingTop:12, borderTop:"1px solid #dde6ef" }}>
+            <div style={{ fontSize:11, fontWeight:800, color:T.muted, marginBottom:8 }}>Per PTH</div>
+            <BarChart color={T.green} data={pthList.map(p => {
+              const kader = (p.prodi||[]).reduce((s,pr) => {
+                const d = pr.latest_dosen||{};
+                return s+(d.tanpa_jad_kader||0)+(d.asisten_ahli_kader||0)+(d.lektor_kader||0)+(d.lektor_kepala_kader||0)+(d.guru_besar_kader||0);
+              }, 0);
+              return { label: truncName(p.nama), value: kader };
+            })} />
+          </div>
+        </div>
+        {/* Berdasarkan Pendidikan */}
+        <div className="card" style={{ padding:20 }}>
+          <h3 style={{ fontWeight:800, color:T.navy, marginBottom:12, fontSize:14 }}>Berdasarkan Pendidikan</h3>
+          <BarChart data={[
+            { label:"S3 / Doktor", value:dosen.s3, color:T.blue },
+            { label:"S2 / Magister", value:dosen.s2, color:T.cyan },
+          ]} />
+          <div style={{ marginTop:12, paddingTop:12, borderTop:"1px solid #dde6ef" }}>
+            <div style={{ fontSize:11, fontWeight:800, color:T.muted, marginBottom:8 }}>S3 per PTH</div>
+            <BarChart color={T.blue} data={pthList.map(p => ({
+              label: truncName(p.nama),
+              value: (p.prodi||[]).reduce((s,pr) => s + (pr.latest_dosen?.dosen_s3||0), 0)
+            }))} />
+          </div>
+        </div>
+        {/* Berdasarkan Jabatan Akademik */}
+        <div className="card" style={{ padding:20 }}>
+          <h3 style={{ fontWeight:800, color:T.navy, marginBottom:12, fontSize:14 }}>Berdasarkan Jabatan Akademik</h3>
+          <BarChart data={[
+            { label:"Guru Besar", value:dosen.guru_besar, color:"#7c3aed" },
+            { label:"Lektor Kepala", value:dosen.lektor_kepala, color:T.blue },
+            { label:"Lektor", value:dosen.lektor, color:T.cyan },
+            { label:"Asisten Ahli", value:dosen.asisten_ahli, color:T.teal },
+            { label:"Tanpa JAD", value:dosen.tanpa_jad, color:T.muted },
+          ]} />
+        </div>
       </div>
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:12}}>
-        <div className="card" style={{padding:20}}>
-          <h3 style={{fontWeight:800,color:T.navy,marginBottom:12,fontSize:14}}>Mahasiswa Aktif per PTH</h3>
-          <BarChart color={T.blue} data={pthList.map(p=>({label:shortName(p.nama),value:(p.prodi||[]).reduce((s,pr)=>s+(pr.latest_mhs?.total_mhs_aktif||0),0)}))}/>
+    </div>
+  );
+
+  /* ── Detail Penelitian & PkM ── */
+  if (drill === "penelitian") return (
+    <div className="fade-up">
+      <BackBtn onClick={() => setDrill(null)} />
+      <SectionTitle title="🔬 Penelitian & Pengabdian Masyarakat" sub="Data publikasi dan pengabdian seluruh PTH" />
+      <div style={{ display:"grid", gridTemplateColumns:isMobile?"1fr":"1fr 1fr", gap:12, marginBottom:12 }}>
+        {/* Sinta Score per PTH */}
+        <div className="card" style={{ padding:20 }}>
+          <h3 style={{ fontWeight:800, color:T.navy, marginBottom:12, fontSize:14 }}>Sinta Score PTH</h3>
+          <BarChart color={T.navy} data={pthList.map(p => ({
+            label: truncName(p.nama),
+            value: parseFloat(p.latest_penelitian?.sinta_score) || 0
+          }))} />
         </div>
-        <div className="card" style={{padding:20}}>
-          <h3 style={{fontWeight:800,color:T.navy,marginBottom:12,fontSize:14}}>Kader Aktif per PTH</h3>
-          <BarChart color={T.green} data={pthList.map(p=>({label:shortName(p.nama),value:(p.prodi||[]).reduce((s,pr)=>s+(pr.latest_mhs?.mhs_aktif_kader||0),0)}))}/>
+        {/* Google Scholar Artikel per PTH */}
+        <div className="card" style={{ padding:20 }}>
+          <h3 style={{ fontWeight:800, color:T.navy, marginBottom:12, fontSize:14 }}>Google Score PTH (Artikel GScholar)</h3>
+          <BarChart color={T.blue} data={pthList.map(p => ({
+            label: truncName(p.nama),
+            value: p.latest_penelitian?.gscholar_artikel || 0
+          }))} />
         </div>
-        <div className="card" style={{padding:20}}>
-          <h3 style={{fontWeight:800,color:T.navy,marginBottom:12,fontSize:14}}>Mahasiswa Baru per PTH</h3>
-          <BarChart color={T.cyan} data={pthList.map(p=>({label:shortName(p.nama),value:(p.prodi||[]).reduce((s,pr)=>s+(pr.latest_mhs?.total_mhs_baru||0),0)}))}/>
+        {/* Google Citation per PTH */}
+        <div className="card" style={{ padding:20 }}>
+          <h3 style={{ fontWeight:800, color:T.navy, marginBottom:12, fontSize:14 }}>Google Citation PTH</h3>
+          <BarChart color={T.cyan} data={pthList.map(p => ({
+            label: truncName(p.nama),
+            value: p.latest_penelitian?.gscholar_citation || 0
+          }))} />
         </div>
-        <div className="card" style={{padding:20}}>
-          <h3 style={{fontWeight:800,color:T.navy,marginBottom:12,fontSize:14}}>Prestasi Mahasiswa</h3>
-          <BarChart data={[{label:"Dalam Negeri",value:mhs.prestasi_dn,color:T.blue},{label:"Internasional",value:mhs.prestasi_int,color:T.purple}]}/>
-          <div style={{marginTop:14}}>
-            <div style={{fontSize:11,fontWeight:800,color:T.muted,marginBottom:8}}>Prestasi per PTH</div>
-            <BarChart color={T.purple} data={pthList.map(p=>({label:shortName(p.nama),value:(p.prodi||[]).reduce((s,pr)=>s+(pr.latest_mhs?.prestasi_dalam_negeri||0)+(pr.latest_mhs?.prestasi_internasional||0),0)}))}/>
+        {/* Rekap tabel */}
+        <div className="card" style={{ padding:20 }}>
+          <h3 style={{ fontWeight:800, color:T.navy, marginBottom:12, fontSize:14 }}>Rekap Lengkap</h3>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>PTH</th><th>Sinta</th><th>GScholar</th><th>Sitasi</th></tr></thead>
+              <tbody>
+                {pthList.map(p => {
+                  const r = p.latest_penelitian || {};
+                  return (
+                    <tr key={p.id}>
+                      <td style={{ fontWeight:700, fontSize:12 }}>{p.nama}</td>
+                      <td style={{ fontFamily:"'DM Mono',monospace", fontWeight:800, color:T.navy }}>{r.sinta_score||0}</td>
+                      <td style={{ fontFamily:"'DM Mono',monospace" }}>{r.gscholar_artikel||0}</td>
+                      <td style={{ fontFamily:"'DM Mono',monospace" }}>{r.gscholar_citation||0}</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>
     </div>
   );
 
-  if(drill==="dosen") return (
-    <div className="fade-up">
-      <BackBtn onClick={()=>setDrill(null)}/>
-      <SectionTitle title="👩‍🏫 Detail Dosen" sub="Kaderisasi, pendidikan, dan jabatan akademik"/>
-      <div className="stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:20}}>
-        <StatCard icon="👩‍🏫" value={dosen.total.toLocaleString("id-ID")} label="Total Dosen" color={T.navy}/>
-        <StatCard icon="🟢" value={dosen.kader.toLocaleString("id-ID")} label="Dosen Kader" color={T.green}/>
-        <StatCard icon="🎓" value={dosen.s3.toLocaleString("id-ID")} label="Bergelar S3" color={T.blue}/>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:12}}>
-        <div className="card" style={{padding:20}}>
-          <h3 style={{fontWeight:800,color:T.navy,marginBottom:12,fontSize:14}}>Berdasarkan Kaderisasi</h3>
-          <BarChart data={[{label:"Kader",value:dosen.kader,color:T.green},{label:"Non-Kader",value:dosen.non_kader,color:T.muted}]}/>
-        </div>
-        <div className="card" style={{padding:20}}>
-          <h3 style={{fontWeight:800,color:T.navy,marginBottom:12,fontSize:14}}>Berdasarkan Pendidikan</h3>
-          <BarChart data={[{label:"S3 / Doktor",value:dosen.s3,color:T.blue},{label:"S2 / Magister",value:dosen.s2,color:T.cyan}]}/>
-        </div>
-      </div>
-      <div className="card" style={{padding:20,marginBottom:12}}>
-        <h3 style={{fontWeight:800,color:T.navy,marginBottom:12,fontSize:14}}>Jabatan Akademik</h3>
-        <BarChart data={[
-          {label:"Guru Besar",value:dosen.guru_besar,color:"#7c3aed"},
-          {label:"Lektor Kepala",value:dosen.lektor_kepala,color:T.blue},
-          {label:"Lektor",value:dosen.lektor,color:T.cyan},
-          {label:"Asisten Ahli",value:dosen.asisten_ahli,color:T.teal},
-          {label:"Tanpa JAD",value:dosen.tanpa_jad,color:T.muted},
-        ]}/>
-      </div>
-      <div className="card" style={{padding:20}}>
-        <h3 style={{fontWeight:800,color:T.navy,marginBottom:12,fontSize:14}}>Total Dosen per PTH</h3>
-        <BarChart color={T.navy} data={pthList.map(p=>({label:shortName(p.nama),value:(p.prodi||[]).reduce((s,pr)=>s+(pr.latest_dosen?.dosen_s2||0)+(pr.latest_dosen?.dosen_s3||0),0)}))}/>
-      </div>
-    </div>
-  );
-
-  if(drill==="penelitian") return (
-    <div className="fade-up">
-      <BackBtn onClick={()=>setDrill(null)}/>
-      <SectionTitle title="🔬 Detail Penelitian" sub="Sinta Score, Google Scholar, Scopus per PTH"/>
-      <div className="stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:12,marginBottom:20}}>
-        <StatCard icon="📊" value={penelitian.sinta_score.toFixed(1)} label="Total Sinta Score" color={T.navy}/>
-        <StatCard icon="📖" value={penelitian.gscholar_artikel.toLocaleString("id-ID")} label="Artikel Google Scholar" color={T.blue}/>
-        <StatCard icon="🌐" value={penelitian.scopus_artikel.toLocaleString("id-ID")} label="Artikel Scopus" color={T.purple}/>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"1fr 1fr",gap:12,marginBottom:12}}>
-        <div className="card" style={{padding:20}}>
-          <h3 style={{fontWeight:800,color:T.navy,marginBottom:12,fontSize:14}}>Sinta Score per PTH</h3>
-          <BarChart color={T.navy} data={pthList.map(p=>({label:shortName(p.nama),value:parseFloat(p.latest_penelitian?.sinta_score)||0}))}/>
-        </div>
-        <div className="card" style={{padding:20}}>
-          <h3 style={{fontWeight:800,color:T.navy,marginBottom:12,fontSize:14}}>Google Scholar per PTH</h3>
-          <BarChart color={T.blue} data={pthList.map(p=>({label:shortName(p.nama),value:(p.latest_penelitian?.gscholar_artikel||0)+(p.latest_penelitian?.gscholar_citation||0)}))}/>
-        </div>
-      </div>
-      <div className="card" style={{padding:20}}>
-        <h3 style={{fontWeight:800,color:T.navy,marginBottom:12,fontSize:14}}>Rekap per PTH</h3>
-        <div className="table-wrap">
-          <table>
-            <thead><tr><th>PTH</th><th>Sinta Score</th><th>GScholar Artikel</th><th>GScholar Sitasi</th><th>Scopus Artikel</th><th>Scopus Sitasi</th></tr></thead>
-            <tbody>
-              {pthList.map(p=>{const r=p.latest_penelitian||{};return(
-                <tr key={p.id}><td style={{fontWeight:700,fontSize:12}}>{p.nama}</td><td style={{fontFamily:"'DM Mono',monospace",fontWeight:800,color:T.navy}}>{r.sinta_score||0}</td><td style={{fontFamily:"'DM Mono',monospace"}}>{r.gscholar_artikel||0}</td><td style={{fontFamily:"'DM Mono',monospace"}}>{r.gscholar_citation||0}</td><td style={{fontFamily:"'DM Mono',monospace"}}>{r.scopus_artikel||0}</td><td style={{fontFamily:"'DM Mono',monospace"}}>{r.scopus_citation||0}</td></tr>
-              );})}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  );
-
+  /* ── Halaman Utama Statistik: 4 Kartu ── */
   return (
     <div className="fade-up">
-      <SectionTitle title="📈 Statistik" sub="Klik kartu untuk melihat detail breakdown"/>
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)",gap:12,marginBottom:16}}>
-        <StatCard icon="🏛️" value={pthList.length} label="Perguruan Tinggi" color={T.navy} sub={`${[...new Set(pthList.map(p=>p.provinsi).filter(Boolean))].length} Provinsi`}/>
-        <StatCard icon="📚" value={prodiList.length} label="Program Studi" color={T.cyan}/>
-        <StatCard icon="🎓" value={mhs.total_aktif.toLocaleString("id-ID")} label="Mahasiswa Aktif" color={T.blue} onClick={()=>setDrill("mahasiswa")} hint="Klik untuk detail"/>
-        <StatCard icon="👩‍🏫" value={dosen.total.toLocaleString("id-ID")} label="Total Dosen" color={T.teal} onClick={()=>setDrill("dosen")} hint="Klik untuk detail"/>
-      </div>
-      <div style={{display:"grid",gridTemplateColumns:isMobile?"1fr":"repeat(3,1fr)",gap:12,marginBottom:16}}>
-        <StatCard icon="👨‍🎓" value={alumni.total.toLocaleString("id-ID")} label="Total Alumni" sub={`${alumni.kader} Kader · ${alumni.non_kader} Non-Kader`} color={T.green} onClick={()=>setDrill("alumni")} hint="Klik untuk detail"/>
-        <StatCard icon="🔬" value={penelitian.sinta_score.toFixed(1)} label="Sinta Score" sub={`${penelitian.gscholar_artikel} GScholar · ${penelitian.scopus_artikel} Scopus`} color={T.purple} onClick={()=>setDrill("penelitian")} hint="Klik untuk detail"/>
-        <StatCard icon="🤝" value={(penelitian.kerjasama_dn+penelitian.kerjasama_ln).toLocaleString("id-ID")} label="Total Kerjasama" sub={`${penelitian.kerjasama_dn} DN · ${penelitian.kerjasama_ln} LN`} color={T.orange}/>
-      </div>
-      <div className="card" style={{padding:20}}>
-        <h3 style={{fontWeight:800,color:T.navy,marginBottom:14,fontSize:14}}>Sebaran Mahasiswa per PTH</h3>
-        <BarChart color={T.blue} data={pthList.map(p=>({label:shortName(p.nama),value:(p.prodi||[]).reduce((s,pr)=>s+(pr.latest_mhs?.total_mhs_aktif||0),0)}))}/>
+      <SectionTitle title="📈 Statistik" sub="Pilih kategori untuk melihat data detail" />
+      <div style={{ display:"grid", gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)", gap:16 }}>
+        {[
+          { key:"alumni",     icon:"👨‍🎓", label:"Alumni",                   color:T.green,  desc:"Total · Kader · Non-Kader" },
+          { key:"mahasiswa",  icon:"🎓",  label:"Mahasiswa",                color:T.blue,   desc:"Aktif · Baru · Kader · Prestasi" },
+          { key:"dosen",      icon:"👩‍🏫", label:"Dosen",                    color:T.teal,   desc:"Kaderisasi · Pendidikan · Jabatan" },
+          { key:"penelitian", icon:"🔬",  label:"Penelitian & PkM",         color:T.purple, desc:"Sinta · GScholar · Citation" },
+        ].map(item => (
+          <div key={item.key} className="card clickable-stat fade-up" style={{ padding:isMobile?"20px 16px":"28px 24px", cursor:"pointer", borderColor:T.border }}
+            onClick={() => setDrill(item.key)}
+            onMouseEnter={e => { e.currentTarget.style.borderColor = item.color; e.currentTarget.style.transform = "translateY(-4px)"; e.currentTarget.style.boxShadow = `0 12px 32px ${item.color}25`; }}
+            onMouseLeave={e => { e.currentTarget.style.borderColor = T.border; e.currentTarget.style.transform = "none"; e.currentTarget.style.boxShadow = ""; }}>
+            <div style={{ fontSize:isMobile?36:48, marginBottom:16, lineHeight:1 }}>{item.icon}</div>
+            <div style={{ fontWeight:900, color:item.color, fontSize:isMobile?16:20, marginBottom:6 }}>{item.label}</div>
+            <div style={{ fontSize:12, color:T.muted, lineHeight:1.5 }}>{item.desc}</div>
+            <div style={{ marginTop:16, fontSize:12, color:item.color, fontWeight:700 }}>Lihat detail →</div>
+          </div>
+        ))}
       </div>
     </div>
   );
