@@ -1141,24 +1141,73 @@ function PageProfilPTH({ user }) {
   const [pth,setPth]=useState({}); const [prodi,setProdi]=useState([]);
   const [editing,setEditing]=useState(false); const [form,setForm]=useState({});
   const [saving,setSaving]=useState(false); const [loading,setLoading]=useState(true);
+  const [showReqNama,setShowReqNama]=useState(false);
+  const [reqNamaBaru,setReqNamaBaru]=useState(""); const [reqAlasan,setReqAlasan]=useState("");
+  const [reqSaving,setReqSaving]=useState(false); const [reqMsg,setReqMsg]=useState({type:"",text:""});
+  const [pendingReq,setPendingReq]=useState(null);
+
   useEffect(()=>{
     Promise.all([
       supabase.from("pth").select("*").eq("id",user.pth_id).single(),
       supabase.from("prodi").select("*").eq("pth_id",user.pth_id),
-    ]).then(([{data:p},{data:pr}])=>{setPth(p||{});setProdi(pr||[]);setForm(p||{});setLoading(false);});
+      supabase.from("name_change_requests").select("*").eq("pth_id",user.pth_id).eq("status","pending").maybeSingle(),
+    ]).then(([{data:p},{data:pr},{data:req}])=>{
+      setPth(p||{}); setProdi(pr||[]); setForm(p||{}); setPendingReq(req); setLoading(false);
+    });
   },[user.pth_id]);
+
   const save=async()=>{
     setSaving(true);
     await supabase.from("pth").update({...form,updated_at:new Date().toISOString()}).eq("id",user.pth_id);
     setPth(form); setSaving(false); setEditing(false);
+  };
+
+  const submitReqNama=async()=>{
+    if(!reqNamaBaru.trim()) return setReqMsg({type:"error",text:"Nama baru wajib diisi."});
+    setReqSaving(true); setReqMsg({type:"",text:""});
+    const {error}=await supabase.from("name_change_requests").insert({
+      pth_id:user.pth_id, nama_lama:pth.nama, nama_baru:reqNamaBaru.trim(),
+      alasan:reqAlasan.trim(), requested_by:user.id, status:"pending"
+    });
+    if(error){setReqMsg({type:"error",text:error.message});setReqSaving(false);return;}
+    setReqMsg({type:"success",text:"✅ Request terkirim! Menunggu persetujuan Super Admin."});
+    setReqSaving(false); setShowReqNama(false); setReqNamaBaru(""); setReqAlasan("");
+    // reload pending
+    const {data:req}=await supabase.from("name_change_requests").select("*").eq("pth_id",user.pth_id).eq("status","pending").maybeSingle();
+    setPendingReq(req);
   };
   if(loading) return <Spin/>;
   return (
     <div>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
         <SectionTitle title="🏛️ Profil PTH"/>
-        <button onClick={()=>setEditing(!editing)} className="btn-outline">{editing?"Batal":"✏️ Edit"}</button>
+        <div style={{display:"flex",gap:8}}>
+          {!pendingReq&&<button onClick={()=>setShowReqNama(!showReqNama)} className="btn-outline" style={{fontSize:12}}>🔄 Ganti Nama</button>}
+          <button onClick={()=>setEditing(!editing)} className="btn-outline">{editing?"Batal":"✏️ Edit"}</button>
+        </div>
       </div>
+
+      {pendingReq&&(
+        <Alert type="warn" msg={`⏳ Ada request ganti nama menunggu persetujuan: "${pendingReq.nama_lama}" → "${pendingReq.nama_baru}"`}/>
+      )}
+      {reqMsg.text&&<Alert type={reqMsg.type} msg={reqMsg.text}/>}
+
+      {showReqNama&&(
+        <div className="card" style={{padding:20,marginBottom:16,border:`2px solid ${T.orange}33`,background:T.orangeL}}>
+          <h4 style={{fontWeight:800,color:T.orange,marginBottom:12}}>🔄 Request Perubahan Nama PTH</h4>
+          <p style={{fontSize:12,color:T.muted,marginBottom:14}}>Nama saat ini: <strong>{pth.nama}</strong></p>
+          <FieldRow label="Nama Baru">
+            <input value={reqNamaBaru} onChange={e=>setReqNamaBaru(e.target.value)} placeholder="Masukkan nama baru PTH"/>
+          </FieldRow>
+          <FieldRow label="Alasan Perubahan (opsional)">
+            <input value={reqAlasan} onChange={e=>setReqAlasan(e.target.value)} placeholder="Contoh: Perubahan bentuk dari STIE menjadi Universitas"/>
+          </FieldRow>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>setShowReqNama(false)} className="btn btn-ghost">Batal</button>
+            <button onClick={submitReqNama} disabled={reqSaving} className="btn btn-accent" style={{color:T.navy}}>{reqSaving?"Mengirim...":"📨 Kirim Request"}</button>
+          </div>
+        </div>
+      )}
       <div className="card" style={{padding:20,marginBottom:16}}>
         <h3 style={{fontWeight:900,color:T.navy,marginBottom:12}}>{pth.nama}</h3>
         {editing?(
@@ -1200,13 +1249,80 @@ function PageProfilPTH({ user }) {
 }
 
 /* ── PAGE DATA PTH (Super Admin) ── */
-function PageDataPTH({ pthList }) {
+function PageDataPTH({ pthList, onRefreshPTH }) {
   const [sel,setSel]=useState(null);
+  const [tab,setTab]=useState("list"); // list | requests
+  const [requests,setRequests]=useState([]);
+  const [actLoading,setActLoading]=useState(false);
+  const [msg,setMsg]=useState({type:"",text:""});
+
+  useEffect(()=>{
+    supabase.from("name_change_requests").select("*,pth(nama)").eq("status","pending").order("created_at",{ascending:false})
+      .then(({data})=>setRequests(data||[]));
+  },[]);
+
+  const actReq=async(req,status)=>{
+    setActLoading(true); setMsg({type:"",text:""});
+    if(status==="approved"){
+      // Update nama di tabel pth
+      const {error}=await supabase.from("pth").update({nama:req.nama_baru,updated_at:new Date().toISOString()}).eq("id",req.pth_id);
+      if(error){setMsg({type:"error",text:error.message});setActLoading(false);return;}
+    }
+    await supabase.from("name_change_requests").update({status,reviewed_by:null,reviewed_at:new Date().toISOString()}).eq("id",req.id);
+    setRequests(prev=>prev.filter(r=>r.id!==req.id));
+    setMsg({type:"success",text:status==="approved"?`✅ Nama berhasil diubah menjadi "${req.nama_baru}"`:"Request ditolak."});
+    if(status==="approved"&&onRefreshPTH) onRefreshPTH();
+    setActLoading(false);
+  };
+
   const p=pthList.find(x=>x.id===sel);
   return (
     <div>
-      <SectionTitle title="🏛️ Data PTH"/>
-      {sel&&p?(
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+        <SectionTitle title="🏛️ Data PTH"/>
+        <div style={{display:"flex",gap:8}}>
+          {[{key:"list",label:"📋 Daftar PTH"},{key:"requests",label:`🔄 Request Nama${requests.length>0?" ("+requests.length+")":""}`}].map(t=>(
+            <button key={t.key} onClick={()=>setTab(t.key)} className={tab===t.key?"btn btn-primary":"btn-outline"} style={{fontSize:12,padding:"8px 14px"}}>{t.label}</button>
+          ))}
+        </div>
+      </div>
+
+      {msg.text&&<Alert type={msg.type} msg={msg.text}/>}
+
+      {tab==="requests"&&(
+        <div className="fade-up">
+          {requests.length===0?(
+            <div className="card" style={{padding:40,textAlign:"center",color:T.muted}}>
+              <div style={{fontSize:48,marginBottom:12}}>🎉</div>
+              <div style={{fontWeight:700}}>Tidak ada request perubahan nama</div>
+            </div>
+          ):requests.map(req=>(
+            <div key={req.id} className="card" style={{padding:18,marginBottom:12}}>
+              <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:12}}>
+                <div>
+                  <div style={{fontWeight:800,color:T.navy,marginBottom:6}}>{req.pth?.nama}</div>
+                  <div style={{fontSize:13,marginBottom:4}}>
+                    <span style={{color:T.muted}}>Nama lama: </span>
+                    <strong style={{color:T.red}}>{req.nama_lama}</strong>
+                  </div>
+                  <div style={{fontSize:13,marginBottom:4}}>
+                    <span style={{color:T.muted}}>Nama baru: </span>
+                    <strong style={{color:T.green}}>{req.nama_baru}</strong>
+                  </div>
+                  {req.alasan&&<div style={{fontSize:12,color:T.muted,marginTop:4}}>💬 {req.alasan}</div>}
+                  <div style={{fontSize:11,color:T.muted,marginTop:6}}>{new Date(req.created_at).toLocaleDateString("id-ID",{day:"numeric",month:"long",year:"numeric"})}</div>
+                </div>
+                <div style={{display:"flex",gap:8,flexShrink:0}}>
+                  <button onClick={()=>actReq(req,"approved")} disabled={actLoading} className="btn btn-green" style={{fontSize:12,padding:"8px 14px"}}>✓ Setuju</button>
+                  <button onClick={()=>actReq(req,"rejected")} disabled={actLoading} className="btn btn-red" style={{fontSize:12,padding:"8px 14px"}}>✕ Tolak</button>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {tab==="list"&&sel&&p?(
         <div className="fade-up">
           <BackBtn onClick={()=>setSel(null)}/>
           <div className="card" style={{padding:20,marginBottom:16}}>
@@ -1542,7 +1658,7 @@ function AdminPanel({ user, onLogout }) {
         {page==="history"&&<PageHistory uploads={uploads} loading={loadingData} isSuperAdmin={isSuperAdmin}/>}
         {page==="approval"&&isSuperAdmin&&<PageApproval uploads={uploads.filter(u=>u.status==="pending")} onRefresh={loadUploads}/>}
         {page==="rekap"&&isSuperAdmin&&<PageRekap pthList={pthList}/>}
-        {page==="datapth"&&isSuperAdmin&&<PageDataPTH pthList={pthList}/>}
+        {page==="datapth"&&isSuperAdmin&&<PageDataPTH pthList={pthList} onRefreshPTH={loadPTH}/>}
         {page==="profil"&&!isSuperAdmin&&<PageProfilPTH user={user}/>}
         {page==="users"&&isSuperAdmin&&<PageUsers/>}
       </main>
