@@ -1298,24 +1298,115 @@ ${rows.map((r,i)=>`<tr><td>${i+1}</td><td><b>${r.nama}</b></td><td>${r.kota}</td
 
 /* ── PAGE USERS ── */
 function PageUsers() {
-  const [users,setUsers]=useState([]);
-  useEffect(()=>{supabase.from("user_roles").select("*,pth(nama)").order("pth_id").then(({data})=>setUsers(data||[]));});
+  const [users, setUsers] = useState([]);
+  const [editing, setEditing] = useState(null); // user_id yang sedang diedit
+  const [form, setForm] = useState({ nama: "", email: "", password: "" });
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState({ type: "", text: "" });
+
+  const load = () => {
+    supabase.from("user_roles").select("*,pth(nama)").order("pth_id")
+      .then(({ data }) => setUsers(data || []));
+  };
+
+  useEffect(() => { load(); }, []);
+
+  const openEdit = (u) => {
+    setEditing(u.user_id);
+    setForm({ nama: u.nama || "", email: u.email || "", password: "" });
+    setMsg({ type: "", text: "" });
+  };
+
+  const save = async () => {
+    if (!form.nama || !form.email) return setMsg({ type: "error", text: "Nama dan email wajib diisi." });
+    setSaving(true); setMsg({ type: "", text: "" });
+    try {
+      // Update nama di user_roles
+      const { error: re } = await supabase.from("user_roles")
+        .update({ nama: form.nama })
+        .eq("user_id", editing);
+      if (re) throw re.message;
+
+      // Update email & password via Supabase Admin API (service role) — tidak bisa dari anon key
+      // Solusi: panggil Edge Function atau gunakan SQL langsung via rpc
+      // Karena kita pakai anon key, kita simpan email baru di user_roles saja sebagai referensi
+      // dan update password via SQL RPC yang sudah kita buat
+
+      // Update email di auth.users via RPC
+      const { error: ee } = await supabase.rpc("admin_update_user_email", {
+        target_user_id: editing,
+        new_email: form.email,
+      });
+      if (ee) throw "Gagal update email: " + ee.message;
+
+      // Update password jika diisi
+      if (form.password) {
+        const { error: pe } = await supabase.rpc("admin_update_user_password", {
+          target_user_id: editing,
+          new_password: form.password,
+        });
+        if (pe) throw "Gagal update password: " + pe.message;
+      }
+
+      setMsg({ type: "success", text: "✅ Data berhasil diperbarui!" });
+      setEditing(null);
+      load();
+    } catch (e) {
+      setMsg({ type: "error", text: String(e) });
+    }
+    setSaving(false);
+  };
+
   return (
     <div>
-      <SectionTitle title="👥 Kelola User"/>
-      <div className="card" style={{overflow:"hidden"}}>
-        <table>
-          <thead><tr><th>Nama</th><th>Role</th><th className="hide-mobile">PTH</th></tr></thead>
-          <tbody>
-            {users.map((u,i)=>(
-              <tr key={i}>
-                <td style={{fontWeight:700,color:T.navy,fontSize:13}}>{u.nama}</td>
-                <td><Tag label={u.role==="superadmin"?"Super Admin":"Admin PTH"} color={u.role==="superadmin"?T.accent:T.blue}/></td>
-                <td className="hide-mobile" style={{color:T.muted,fontSize:12}}>{u.pth?.nama||"— Semua PTH —"}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+      <SectionTitle title="👥 Kelola User" sub="Klik ✏️ untuk edit email dan password akun admin"/>
+      {msg.text && <Alert type={msg.type} msg={msg.text}/>}
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {users.map((u) => (
+          <div key={u.user_id} className="card" style={{ padding: 18 }}>
+            {editing === u.user_id ? (
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 14 }}>
+                  <Tag label={u.role === "superadmin" ? "Super Admin" : "Admin PTH"} color={u.role === "superadmin" ? T.accent : T.blue}/>
+                  {u.pth?.nama && <span style={{ fontSize: 12, color: T.muted }}>{u.pth.nama}</span>}
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0 16px" }} className="two-col">
+                  <FieldRow label="Nama Tampilan">
+                    <input value={form.nama} onChange={e => setForm({ ...form, nama: e.target.value })}/>
+                  </FieldRow>
+                  <FieldRow label="Email Login">
+                    <input type="email" value={form.email} onChange={e => setForm({ ...form, email: e.target.value })}/>
+                  </FieldRow>
+                  <FieldRow label="Password Baru (kosongkan jika tidak diganti)">
+                    <input type="password" placeholder="Minimal 6 karakter" value={form.password} onChange={e => setForm({ ...form, password: e.target.value })}/>
+                  </FieldRow>
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                  <button onClick={() => setEditing(null)} className="btn btn-ghost">Batal</button>
+                  <button onClick={save} disabled={saving} className="btn btn-green">
+                    {saving ? "Menyimpan..." : "💾 Simpan"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+                <div>
+                  <div style={{ fontWeight: 800, color: T.navy, fontSize: 14 }}>{u.nama}</div>
+                  <div style={{ fontSize: 12, color: T.muted, marginTop: 3 }}>
+                    {u.pth?.nama || "— Semua PTH —"}
+                  </div>
+                  <div style={{ marginTop: 6 }}>
+                    <Tag label={u.role === "superadmin" ? "Super Admin" : "Admin PTH"} color={u.role === "superadmin" ? T.accent : T.blue}/>
+                  </div>
+                </div>
+                <button onClick={() => openEdit(u)} className="btn-outline" style={{ fontSize: 13, flexShrink: 0 }}>
+                  ✏️ Edit
+                </button>
+              </div>
+            )}
+          </div>
+        ))}
       </div>
     </div>
   );
