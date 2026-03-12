@@ -825,7 +825,7 @@ function PageUpload({ user, onDone }) {
 
   const downloadTemplate = () => {
     const link=document.createElement("a");
-    link.href=process.env.PUBLIC_URL+"/Template_Upload_Semester_FINAL.xlsx";
+    link.href=process.env.PUBLIC_URL+"/Template_Upload_Semester_Hidayatullah.xlsx";
     link.download="Template_Upload_Semester_Hidayatullah.xlsx";
     document.body.appendChild(link); link.click(); document.body.removeChild(link);
   };
