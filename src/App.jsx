@@ -117,9 +117,9 @@ const SectionTitle = ({ title, sub }) => (
 const StatCard = ({ icon, value, label, color=T.navy, sub, onClick, hint }) => (
   <div className={"card fade-up"+(onClick?" clickable-stat":"")} style={{ padding:"18px 16px" }} onClick={onClick}>
     <div style={{ display:"flex",alignItems:"flex-start",justifyContent:"space-between" }}>
-      <div>
+      <div style={{flex:1}}>
         <div style={{ fontSize:22,marginBottom:6 }}>{icon}</div>
-        <div style={{ fontSize:24,fontWeight:900,color,fontFamily:"'DM Mono',monospace",letterSpacing:"-0.03em" }}>{value ?? 0}</div>
+        <div style={{ fontSize:24,fontWeight:900,color,fontFamily:"'DM Mono',monospace",letterSpacing:"-0.03em",display:"flex",alignItems:"center",flexWrap:"wrap",gap:4 }}>{value ?? 0}</div>
         <div style={{ fontSize:12,fontWeight:700,color:T.text,marginTop:4 }}>{label}</div>
         {sub && <div style={{ fontSize:11,color:T.muted,marginTop:2 }}>{sub}</div>}
       </div>
@@ -349,7 +349,7 @@ function PublicTabs({ active, setActive }) {
 }
 
 /* ── STATISTIK DRILL-DOWN ── */
-function PageStatistik({ pthList, prodiList, stats }) {
+function PageStatistik({ pthList, prodiList, stats, FilterBar=()=>null, GrowthBadge=()=>null, prevStats={} }) {
   const [drill, setDrill] = useState(null);
   const { isMobile } = useBreakpoint();
   const { mhs, dosen, alumni, penelitian } = stats;
@@ -361,8 +361,9 @@ function PageStatistik({ pthList, prodiList, stats }) {
     <div className="fade-up">
       <BackBtn onClick={() => setDrill(null)} />
       <SectionTitle title="👨‍🎓 Alumni" sub="Jumlah alumni kader dan non-kader per PTH" />
+      <FilterBar/>
       <div className="stat-grid" style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, marginBottom:20 }}>
-        <StatCard icon="👨‍🎓" value={alumni.total.toLocaleString("id-ID")} label="Jumlah Total Alumni" color={T.navy} />
+        <StatCard icon="👨‍🎓" value={alumni.total.toLocaleString("id-ID")} label="Jumlah Total Alumni" color={T.navy} sub={<GrowthBadge cur={alumni.total} prev={prevStats.alumni}/>}/>
         <StatCard icon="🟢" value={alumni.kader.toLocaleString("id-ID")} label="Jumlah Alumni Kader" color={T.green} />
         <StatCard icon="🔵" value={alumni.non_kader.toLocaleString("id-ID")} label="Jumlah Alumni Non-Kader" color={T.blue} />
       </div>
@@ -382,8 +383,9 @@ function PageStatistik({ pthList, prodiList, stats }) {
       <BackBtn onClick={() => setDrill(null)} />
       <SectionTitle title="🎓 Mahasiswa" sub="Data mahasiswa seluruh PTH" />
       {/* Baris 1: Total + per PTH */}
+      <FilterBar/>
       <div className="stat-grid" style={{ display:"grid", gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)", gap:12, marginBottom:16 }}>
-        <StatCard icon="🎓" value={mhs.total_aktif.toLocaleString("id-ID")} label="Jumlah Total Mahasiswa" color={T.navy} />
+        <StatCard icon="🎓" value={mhs.total_aktif.toLocaleString("id-ID")} label="Jumlah Total Mahasiswa" color={T.navy} sub={<GrowthBadge cur={mhs.total_aktif} prev={prevStats.mhs}/>}/>
         <StatCard icon="🆕" value={mhs.total_baru.toLocaleString("id-ID")} label="Total Mahasiswa Baru" color={T.cyan} />
         <StatCard icon="🟢" value={mhs.aktif_kader.toLocaleString("id-ID")} label="Kader Aktif" color={T.green} />
         <StatCard icon="🏆" value={(mhs.prestasi_dn + mhs.prestasi_int).toLocaleString("id-ID")} label="Prestasi Total" color={T.purple} />
@@ -446,6 +448,7 @@ function PageStatistik({ pthList, prodiList, stats }) {
     <div className="fade-up">
       <BackBtn onClick={() => setDrill(null)} />
       <SectionTitle title="👩‍🏫 Dosen" sub="Data dosen seluruh PTH" />
+      <FilterBar/>
       <div style={{ display:"grid", gridTemplateColumns:isMobile?"1fr":"1fr 1fr 1fr", gap:12, marginBottom:16 }}>
         {/* Berdasarkan Level Kaderisasi */}
         <div className="card" style={{ padding:20 }}>
@@ -500,6 +503,7 @@ function PageStatistik({ pthList, prodiList, stats }) {
     <div className="fade-up">
       <BackBtn onClick={() => setDrill(null)} />
       <SectionTitle title="🔬 Penelitian & Pengabdian Masyarakat" sub="Data publikasi dan pengabdian seluruh PTH" />
+      <FilterBar/>
       <div style={{ display:"grid", gridTemplateColumns:isMobile?"1fr":"1fr 1fr", gap:12, marginBottom:12 }}>
         {/* Sinta Score per PTH */}
         <div className="card" style={{ padding:20 }}>
@@ -555,6 +559,7 @@ function PageStatistik({ pthList, prodiList, stats }) {
   return (
     <div className="fade-up">
       <SectionTitle title="📈 Statistik" sub="Pilih kategori untuk melihat data detail" />
+      <FilterBar/>
       <div style={{ display:"grid", gridTemplateColumns:isMobile?"1fr 1fr":"repeat(4,1fr)", gap:16 }}>
         {[
           { key:"alumni",     icon:"👨‍🎓", label:"Alumni",                   color:T.green,  desc:"Total · Kader · Non-Kader" },
@@ -579,28 +584,173 @@ function PageStatistik({ pthList, prodiList, stats }) {
 
 /* ── PUBLIC DASHBOARD ── */
 function PublicDashboard() {
-  const [pthList,setPthList]=useState([]); const [prodiList,setProdiList]=useState([]);
+  const [pthRaw,setPthRaw]=useState([]); // semua data mentah semua TA
+  const [prodiList,setProdiList]=useState([]);
+  const [allMhs,setAllMhs]=useState([]); const [allDosen,setAllDosen]=useState([]);
+  const [allPenelitian,setAllPenelitian]=useState([]); const [allKerjasama,setAllKerjasama]=useState([]);
   const [loading,setLoading]=useState(true);
   const [activePage,setActivePage]=useState("dashboard");
   const [selectedPTH,setSelectedPTH]=useState(null); const [selectedProdi,setSelectedProdi]=useState(null);
+  const [filterMode,setFilterMode]=useState("berjalan"); // berjalan | tahun | kumulatif
+  const [filterTA,setFilterTA]=useState(""); // dipilih kalau mode=tahun
   const {isMobile}=useBreakpoint();
 
   useEffect(()=>{
     Promise.all([
-      supabase.from("pth").select(`*,prodi(*,latest_mhs:data_mahasiswa(total_mhs_aktif,total_mhs_baru,mhs_aktif_kader,mhs_baru_kader,prestasi_dalam_negeri,prestasi_internasional),latest_dosen:data_dosen(dosen_s2,dosen_s3,tanpa_jad_kader,tanpa_jad_non_kader,asisten_ahli_kader,asisten_ahli_non_kader,lektor_kader,lektor_non_kader,lektor_kepala_kader,lektor_kepala_non_kader,guru_besar_kader,guru_besar_non_kader)),latest_penelitian:data_penelitian(*),latest_kerjasama:data_kerjasama(*)`).eq("status","Aktif").order("id"),
+      supabase.from("pth").select("*,prodi(id,nama,jenjang,akreditasi,status,pth_id)").eq("status","Aktif").order("id"),
       supabase.from("prodi").select("*,pth(nama)").eq("status","Aktif"),
-    ]).then(([{data:p},{data:pr}])=>{
-      const norm=(p||[]).map(pth=>({...pth,
-        latest_penelitian:Array.isArray(pth.latest_penelitian)?(pth.latest_penelitian[pth.latest_penelitian.length-1]||{}):(pth.latest_penelitian||{}),
-        latest_kerjasama:Array.isArray(pth.latest_kerjasama)?(pth.latest_kerjasama[pth.latest_kerjasama.length-1]||{}):(pth.latest_kerjasama||{}),
-        prodi:(pth.prodi||[]).map(pr=>({...pr,
-          latest_mhs:Array.isArray(pr.latest_mhs)?(pr.latest_mhs[pr.latest_mhs.length-1]||{}):(pr.latest_mhs||{}),
-          latest_dosen:Array.isArray(pr.latest_dosen)?(pr.latest_dosen[pr.latest_dosen.length-1]||{}):(pr.latest_dosen||{}),
-        })),
-      }));
-      setPthList(norm); setProdiList(pr||[]); setLoading(false);
+      supabase.from("data_mahasiswa").select("*").order("tahun_akademik"),
+      supabase.from("data_dosen").select("*").order("tahun_akademik"),
+      supabase.from("data_penelitian").select("*").order("tahun_akademik"),
+      supabase.from("data_kerjasama").select("*").order("tahun_akademik"),
+    ]).then(([{data:p},{data:pr},{data:mhs},{data:dos},{data:pen},{data:ks}])=>{
+      setPthRaw(p||[]); setProdiList(pr||[]);
+      setAllMhs(mhs||[]); setAllDosen(dos||[]);
+      setAllPenelitian(pen||[]); setAllKerjasama(ks||[]);
+      setLoading(false);
     });
   },[]);
+
+  // Daftar tahun akademik yang tersedia
+  const allTA = [...new Set([
+    ...allMhs.map(r=>r.tahun_akademik),
+    ...allPenelitian.map(r=>r.tahun_akademik),
+  ].filter(Boolean))].sort().reverse();
+
+  const latestTA = allTA[0] || "";
+  const prevTA   = allTA[1] || "";
+
+  // Filter data berdasarkan mode
+  const filterData = (rows, ta) => {
+    if(filterMode==="berjalan") return rows.filter(r=>r.tahun_akademik===latestTA);
+    if(filterMode==="tahun")    return rows.filter(r=>r.tahun_akademik===(filterTA||latestTA));
+    return rows; // kumulatif = semua
+  };
+
+  // Agregasi data per prodi/pth berdasarkan filter
+  const aggMhs = (prodiId) => {
+    const rows = filterData(allMhs).filter(r=>r.prodi_id===prodiId);
+    if(!rows.length) return {};
+    return rows.reduce((acc,r)=>({
+      total_mhs_aktif:(acc.total_mhs_aktif||0)+(r.total_mhs_aktif||0),
+      total_mhs_baru:(acc.total_mhs_baru||0)+(r.total_mhs_baru||0),
+      mhs_aktif_kader:(acc.mhs_aktif_kader||0)+(r.mhs_aktif_kader||0),
+      mhs_baru_kader:(acc.mhs_baru_kader||0)+(r.mhs_baru_kader||0),
+      prestasi_dalam_negeri:(acc.prestasi_dalam_negeri||0)+(r.prestasi_dalam_negeri||0),
+      prestasi_internasional:(acc.prestasi_internasional||0)+(r.prestasi_internasional||0),
+    }),{});
+  };
+
+  const aggDosen = (prodiId) => {
+    const rows = filterData(allDosen).filter(r=>r.prodi_id===prodiId);
+    if(!rows.length) return {};
+    // kumulatif dosen: ambil terbaru per prodi (bukan dijumlah — dosen tidak bertambah tiap semester)
+    if(filterMode==="kumulatif"){
+      const sorted=rows.sort((a,b)=>b.tahun_akademik>a.tahun_akademik?1:-1);
+      return sorted[0];
+    }
+    return rows.reduce((acc,r)=>({
+      dosen_s2:(acc.dosen_s2||0)+(r.dosen_s2||0),
+      dosen_s3:(acc.dosen_s3||0)+(r.dosen_s3||0),
+      tanpa_jad_kader:(acc.tanpa_jad_kader||0)+(r.tanpa_jad_kader||0),
+      tanpa_jad_non_kader:(acc.tanpa_jad_non_kader||0)+(r.tanpa_jad_non_kader||0),
+      asisten_ahli_kader:(acc.asisten_ahli_kader||0)+(r.asisten_ahli_kader||0),
+      asisten_ahli_non_kader:(acc.asisten_ahli_non_kader||0)+(r.asisten_ahli_non_kader||0),
+      lektor_kader:(acc.lektor_kader||0)+(r.lektor_kader||0),
+      lektor_non_kader:(acc.lektor_non_kader||0)+(r.lektor_non_kader||0),
+      lektor_kepala_kader:(acc.lektor_kepala_kader||0)+(r.lektor_kepala_kader||0),
+      lektor_kepala_non_kader:(acc.lektor_kepala_non_kader||0)+(r.lektor_kepala_non_kader||0),
+      guru_besar_kader:(acc.guru_besar_kader||0)+(r.guru_besar_kader||0),
+      guru_besar_non_kader:(acc.guru_besar_non_kader||0)+(r.guru_besar_non_kader||0),
+    }),{});
+  };
+
+  const aggPenelitian = (pthId) => {
+    const rows = filterData(allPenelitian).filter(r=>r.pth_id===pthId);
+    if(!rows.length) return {};
+    if(filterMode==="kumulatif"){
+      return rows.reduce((acc,r)=>({
+        sinta_score:(acc.sinta_score||0)+(parseFloat(r.sinta_score)||0),
+        gscholar_artikel:(acc.gscholar_artikel||0)+(r.gscholar_artikel||0),
+        gscholar_citation:(acc.gscholar_citation||0)+(r.gscholar_citation||0),
+        scopus_artikel:(acc.scopus_artikel||0)+(r.scopus_artikel||0),
+        scopus_citation:(acc.scopus_citation||0)+(r.scopus_citation||0),
+      }),{});
+    }
+    const sorted=rows.sort((a,b)=>b.tahun_akademik>a.tahun_akademik?1:-1);
+    return sorted[0]||{};
+  };
+
+  const aggKerjasama = (pthId) => {
+    const rows = filterData(allKerjasama).filter(r=>r.pth_id===pthId);
+    if(!rows.length) return {};
+    return rows.reduce((acc,r)=>({
+      alumni_kader:(acc.alumni_kader||0)+(r.alumni_kader||0),
+      alumni_non_kader:(acc.alumni_non_kader||0)+(r.alumni_non_kader||0),
+      kerjasama_dn:(acc.kerjasama_dn||0)+(r.kerjasama_dn||0),
+      kerjasama_ln:(acc.kerjasama_ln||0)+(r.kerjasama_ln||0),
+    }),{});
+  };
+
+  // Build pthList dengan data terfilter
+  const pthList = pthRaw.map(pth=>({
+    ...pth,
+    prodi:(pth.prodi||[]).map(pr=>({
+      ...pr,
+      latest_mhs:aggMhs(pr.id),
+      latest_dosen:aggDosen(pr.id),
+    })),
+    latest_penelitian:aggPenelitian(pth.id),
+    latest_kerjasama:aggKerjasama(pth.id),
+  }));
+
+  // Data tahun sebelumnya untuk pertumbuhan (selalu pakai prevTA)
+  const prevMhsTotal = allMhs.filter(r=>r.tahun_akademik===prevTA).reduce((s,r)=>s+(r.total_mhs_aktif||0),0);
+  const prevDosenTotal = allDosen.filter(r=>r.tahun_akademik===prevTA).reduce((s,r)=>s+(r.dosen_s2||0)+(r.dosen_s3||0),0);
+  const prevAlumniTotal = allKerjasama.filter(r=>r.tahun_akademik===prevTA).reduce((s,r)=>s+(r.alumni_kader||0)+(r.alumni_non_kader||0),0);
+
+  const growth = (cur,prev) => {
+    if(!prev) return null;
+    const pct = ((cur-prev)/prev*100).toFixed(1);
+    return { pct, up: cur>=prev };
+  };
+
+  // Komponen badge pertumbuhan
+  const GrowthBadge = ({cur,prev}) => {
+    const g = growth(cur,prev);
+    if(!g||filterMode!=="berjalan") return null;
+    return (
+      <span style={{fontSize:10,fontWeight:800,padding:"2px 6px",borderRadius:99,background:g.up?T.greenL:T.redL,color:g.up?T.green:T.red,marginLeft:6}}>
+        {g.up?"▲":"▼"} {Math.abs(g.pct)}%
+      </span>
+    );
+  };
+
+  // Filter bar komponen
+  const FilterBar = () => (
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16,flexWrap:"wrap"}}>
+      <span style={{fontSize:12,fontWeight:700,color:T.muted}}>Tampilkan:</span>
+      {[
+        {key:"berjalan", label:`📅 Tahun Berjalan${latestTA?" ("+latestTA+")":""}`},
+        {key:"tahun",    label:"📆 Per Tahun"},
+        {key:"kumulatif",label:"📊 Kumulatif"},
+      ].map(m=>(
+        <button key={m.key} onClick={()=>setFilterMode(m.key)}
+          style={{fontSize:12,padding:"6px 12px",borderRadius:99,border:`1.5px solid ${filterMode===m.key?T.blue:T.border}`,background:filterMode===m.key?T.blueL:"#fff",color:filterMode===m.key?T.blue:T.muted,fontWeight:700,cursor:"pointer",fontFamily:"inherit"}}>
+          {m.label}
+        </button>
+      ))}
+      {filterMode==="tahun"&&(
+        <select value={filterTA||latestTA} onChange={e=>setFilterTA(e.target.value)}
+          style={{fontSize:12,padding:"6px 10px",borderRadius:8,border:`1.5px solid ${T.blue}`,color:T.blue,fontWeight:700,cursor:"pointer",background:T.blueL}}>
+          {allTA.map(ta=><option key={ta} value={ta}>{ta}</option>)}
+        </select>
+      )}
+      {filterMode==="berjalan"&&prevTA&&(
+        <span style={{fontSize:11,color:T.muted}}>vs tahun sebelumnya ({prevTA})</span>
+      )}
+    </div>
+  );
 
   const navTo=k=>{setActivePage(k);setSelectedPTH(null);setSelectedProdi(null);};
   const stats={
@@ -650,10 +800,11 @@ function PublicDashboard() {
               <h1 style={{color:"#fff",fontSize:isMobile?16:20,fontWeight:900,lineHeight:1.3,marginBottom:6}}>Pangkalan Data<br/>Perguruan Tinggi Hidayatullah</h1>
               <p style={{color:"#94a3b8",fontSize:12}}>Data resmi & transparan untuk publik</p>
             </div>
+            <FilterBar/>
             <div className="stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}}>
               <StatCard icon="🏛️" value={pthList.length} label="Total PTH" color={T.navy}/>
               <StatCard icon="📚" value={prodiList.length} label="Total Prodi" color={T.cyan}/>
-              <StatCard icon="🎓" value={stats.mhs.total_aktif.toLocaleString("id-ID")} label="Mahasiswa" color={T.blue} onClick={()=>navTo("statistik")}/>
+              <StatCard icon="🎓" value={<span>{stats.mhs.total_aktif.toLocaleString("id-ID")}<GrowthBadge cur={stats.mhs.total_aktif} prev={prevMhsTotal}/></span>} label="Mahasiswa" color={T.blue} onClick={()=>navTo("statistik")}/>
               <StatCard icon="📍" value={[...new Set(pthList.map(p=>p.provinsi).filter(Boolean))].length} label="Provinsi" color={T.purple}/>
             </div>
             <div className="card" style={{padding:0,overflow:"hidden"}}>
@@ -800,7 +951,7 @@ function PublicDashboard() {
           </div>
         ))}
 
-        {activePage==="statistik"&&<PageStatistik pthList={pthList} prodiList={prodiList} stats={stats}/>}
+        {activePage==="statistik"&&<PageStatistik pthList={pthList} prodiList={prodiList} stats={stats} FilterBar={FilterBar} GrowthBadge={GrowthBadge} prevStats={{mhs:prevMhsTotal,dosen:prevDosenTotal,alumni:prevAlumniTotal}}/>}
 
         </>)}
       </div>
