@@ -1,0 +1,14 @@
+# Dependencies
+node_modules/
+
+# Environment variables (RAHASIA - jangan diupload!)
+.env
+.env.local
+.env.production
+
+# Build output
+build/
+
+# OS files
+.DS_Store
+Thumbs.db
