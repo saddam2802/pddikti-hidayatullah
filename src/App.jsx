@@ -79,6 +79,7 @@ const css = `
     .main-content{padding:20px!important}
     .stat-grid{grid-template-columns:repeat(2,1fr)!important}
     .pth-grid{grid-template-columns:repeat(2,1fr)!important}
+    .two-col{grid-template-columns:1fr!important}
   }
 `;
 
@@ -287,7 +288,7 @@ function FormProfilPTH({ user, onDone }) {
           <p style={{color:T.muted,fontSize:13,marginTop:6}}>Isi data berikut untuk melanjutkan. Hanya dilakukan sekali.</p>
         </div>
         {err&&<Alert type="error" msg={err}/>}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}}>
+        <div style={{display:"grid",gridTemplateColumns:window.innerWidth<600?"1fr":"1fr 1fr",gap:"0 16px"}}>
           {[["nama_sk","Nama SK Pendirian"],["badan_penyelenggara","Badan Penyelenggara"],["kota","Kota/Kabupaten"],["provinsi","Provinsi"],["website","Website"],["telp","No. Telepon"]].map(([k,l])=>(
             <FieldRow key={k} label={l}><input value={form[k]} onChange={e=>setForm({...form,[k]:e.target.value})}/></FieldRow>
           ))}
@@ -1362,7 +1363,7 @@ function PageProfilPTH({ user }) {
       <div className="card" style={{padding:20,marginBottom:16}}>
         <h3 style={{fontWeight:900,color:T.navy,marginBottom:12}}>{pth.nama}</h3>
         {editing?(
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 16px"}} className="two-col">
+          <div style={{display:"grid",gridTemplateColumns:window.innerWidth<600?"1fr":"1fr 1fr",gap:"0 16px"}} className="two-col">
             {[["nama_sk","Nama SK"],["badan_penyelenggara","Badan Penyelenggara"],["kota","Kota"],["provinsi","Provinsi"],["website","Website"],["telp","Telepon"]].map(([k,l])=>(
               <FieldRow key={k} label={l}><input value={form[k]||""} onChange={e=>setForm({...form,[k]:e.target.value})}/></FieldRow>
             ))}
