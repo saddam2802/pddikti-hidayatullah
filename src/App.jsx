@@ -1780,7 +1780,13 @@ function PageDataPTH({ pthList, onRefreshPTH }) {
       const {error}=await supabase.from("pth").update({nama:req.nama_baru,updated_at:new Date().toISOString()}).eq("id",req.pth_id);
       if(error){setMsg({type:"error",text:error.message});setActLoading(false);return;}
     }
-    await supabase.from("name_change_requests").update({status,reviewed_by:null,reviewed_at:new Date().toISOString()}).eq("id",req.id);
+    const {error:errReq}=await supabase.from("name_change_requests")
+      .update({status, reviewed_at:new Date().toISOString()})
+      .eq("id",req.id);
+    if(errReq){
+      setMsg({type:"error",text:"Gagal update status request: "+errReq.message});
+      setActLoading(false); return;
+    }
     setRequests(prev=>prev.filter(r=>r.id!==req.id));
     setMsg({type:"success",text:status==="approved"?`✅ Nama berhasil diubah menjadi "${req.nama_baru}"`:"Request ditolak."});
     if(status==="approved"&&onRefreshPTH) onRefreshPTH();
