@@ -1847,21 +1847,6 @@ function PageProfilPTH({ user }) {
                   );
                 });
               })()}
-                    {(()=>{
-                      if(p.jabatan==="ketua") return "👑 Ketua/Rektor";
-                      if(p.jabatan==="kaprodi") return `📚 Kaprodi ${p.prodi?.nama||""}`;
-                      // Hitung urutan wakil ketua ini
-                      const wakilList = [
-                        ...(pengurus.filter?pengurus.filter(x=>x.jabatan==="wakil_ketua"):
-                           (pthPengurus[selectedPTH?.id]||[]).filter(x=>x.jabatan==="wakil_ketua"))
-                      ];
-                      const idx = wakilList.findIndex(x=>x.id===p.id);
-                      return wakilList.length>1?`🏅 Wakil Ketua/Rektor ${idx+1}`:"🏅 Wakil Ketua/Rektor";
-                    })()}
-                  </div>
-                  <div style={{fontWeight:800,color:T.navy,fontSize:14}}>{p.nama}</div>
-                </div>
-              ))}
             </div>
           )}
         </div>
