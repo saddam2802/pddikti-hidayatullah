@@ -597,20 +597,64 @@ function PublicDashboard() {
   const {isMobile}=useBreakpoint();
 
   useEffect(()=>{
-    Promise.all([
-      supabase.from("pth").select("*,prodi(id,nama,jenjang,akreditasi,status,pth_id)").eq("status","Aktif").order("id"),
-      supabase.from("prodi").select("*,pth(nama)").eq("status","Aktif"),
-      supabase.from("data_mahasiswa").select("*").order("tahun_akademik"),
-      supabase.from("data_dosen").select("*").order("tahun_akademik"),
-      supabase.from("data_penelitian").select("*").order("tahun_akademik"),
-      supabase.from("data_kerjasama").select("*").order("tahun_akademik"),
-    ]).then(([{data:p},{data:pr},{data:mhs},{data:dos},{data:pen},{data:ks}])=>{
+    const loadData = async () => {
+      // Step 1: Ambil PTH, Prodi, dan cari tahun akademik terbaru dulu
+      const [{data:p},{data:pr},{data:latestTA}] = await Promise.all([
+        supabase.from("pth").select("*,prodi(id,nama,jenjang,akreditasi,status,pth_id)").eq("status","Aktif").order("id"),
+        supabase.from("prodi").select("*,pth(nama)").eq("status","Aktif"),
+        supabase.from("data_mahasiswa").select("tahun_akademik").order("tahun_akademik",{ascending:false}).limit(1),
+      ]);
+
+      const latestTAVal = latestTA?.[0]?.tahun_akademik || null;
+      // Ambil juga TA sebelumnya untuk perhitungan pertumbuhan
+      const {data:allTA} = await supabase.from("data_mahasiswa")
+        .select("tahun_akademik").order("tahun_akademik",{ascending:false});
+      const uniqueTA = [...new Set((allTA||[]).map(r=>r.tahun_akademik))];
+      const prevTAVal = uniqueTA[1] || null;
+
+      // Step 2: Fetch data — default hanya tahun terbaru + tahun sebelumnya
+      // Data kumulatif di-fetch nanti kalau user pilih mode kumulatif
+      const taFilter = latestTAVal
+        ? [latestTAVal, prevTAVal].filter(Boolean)
+        : null;
+
+      const fetchWithFilter = (table) => {
+        let q = supabase.from(table).select("*").order("tahun_akademik");
+        if(taFilter) q = q.in("tahun_akademik", taFilter);
+        return q;
+      };
+
+      const [{data:mhs},{data:dos},{data:pen},{data:ks}] = await Promise.all([
+        fetchWithFilter("data_mahasiswa"),
+        fetchWithFilter("data_dosen"),
+        fetchWithFilter("data_penelitian"),
+        fetchWithFilter("data_kerjasama"),
+      ]);
+
       setPthRaw(p||[]); setProdiList(pr||[]);
       setAllMhs(mhs||[]); setAllDosen(dos||[]);
       setAllPenelitian(pen||[]); setAllKerjasama(ks||[]);
       setLoading(false);
-    });
+    };
+    loadData();
   },[]);
+
+  // Fetch semua data kalau mode kumulatif dipilih
+  const [fullDataLoaded, setFullDataLoaded] = useState(false);
+  useEffect(()=>{
+    if(filterMode==="kumulatif" && !fullDataLoaded){
+      Promise.all([
+        supabase.from("data_mahasiswa").select("*").order("tahun_akademik"),
+        supabase.from("data_dosen").select("*").order("tahun_akademik"),
+        supabase.from("data_penelitian").select("*").order("tahun_akademik"),
+        supabase.from("data_kerjasama").select("*").order("tahun_akademik"),
+      ]).then(([{data:mhs},{data:dos},{data:pen},{data:ks}])=>{
+        setAllMhs(mhs||[]); setAllDosen(dos||[]);
+        setAllPenelitian(pen||[]); setAllKerjasama(ks||[]);
+        setFullDataLoaded(true);
+      });
+    }
+  },[filterMode]);
 
   // Daftar tahun akademik yang tersedia
   const allTA = [...new Set([
@@ -1301,10 +1345,12 @@ function PageHistory({ uploads, loading, isSuperAdmin, user, onRefresh }) {
           kerjasama_dn:r.kerjasama_dn,kerjasama_ln:r.kerjasama_ln,
         }).eq("id",r.id);
       }
-      setMsg({type:"success",text:"✅ Data berhasil dikoreksi!"});
+      setMsg({type:"success",text:"✅ Data berhasil dikoreksi! Halaman akan direfresh..."});
       if(onRefresh) onRefresh();
+      // Reload setelah 1.5 detik biar user sempat baca notifikasi
+      setTimeout(()=>window.location.reload(), 1500);
     } catch(e){
-      setMsg({type:"error",text:"Gagal menyimpan: "+e.message});
+      setMsg({type:"error",text:"❌ Gagal menyimpan: "+e.message});
     }
     setSaving(false);
   };
@@ -1404,10 +1450,19 @@ function PageHistory({ uploads, loading, isSuperAdmin, user, onRefresh }) {
           </div>
         ))}
 
+        {msg.text&&(
+          <div style={{padding:"12px 16px",borderRadius:10,marginBottom:12,
+            background:msg.type==="success"?"#f0fdf4":"#fef2f2",
+            border:`1.5px solid ${msg.type==="success"?"#86efac":"#fca5a5"}`,
+            color:msg.type==="success"?"#15803d":"#dc2626",
+            fontWeight:700,fontSize:13}}>
+            {msg.text}
+          </div>
+        )}
         <div style={{display:"flex",gap:10,marginTop:8}}>
           <button onClick={()=>{setKoreksiUpload(null);setKoreksiData(null);}} className="btn btn-ghost">Batal</button>
-          <button onClick={simpanKoreksi} disabled={saving} className="btn btn-primary" style={{flex:1}}>
-            {saving?"Menyimpan...":"💾 Simpan Koreksi"}
+          <button onClick={simpanKoreksi} disabled={saving} className="btn btn-primary" style={{flex:1,opacity:saving?0.7:1}}>
+            {saving?"⏳ Menyimpan data...":"💾 Simpan Koreksi"}
           </button>
         </div>
       </>)}
