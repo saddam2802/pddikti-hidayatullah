@@ -705,6 +705,13 @@ function PublicDashboard() {
     latest_kerjasama:aggKerjasama(pth.id),
   }));
 
+  // prodiList juga inject latest_mhs dan latest_dosen (untuk halaman Prodi)
+  const prodiListEnriched = prodiList.map(pr=>({
+    ...pr,
+    latest_mhs:aggMhs(pr.id),
+    latest_dosen:aggDosen(pr.id),
+  }));
+
   // Data tahun sebelumnya untuk pertumbuhan (selalu pakai prevTA)
   const prevMhsTotal = allMhs.filter(r=>r.tahun_akademik===prevTA).reduce((s,r)=>s+(r.total_mhs_aktif||0),0);
   const prevDosenTotal = allDosen.filter(r=>r.tahun_akademik===prevTA).reduce((s,r)=>s+(r.dosen_s2||0)+(r.dosen_s3||0),0);
@@ -804,7 +811,7 @@ function PublicDashboard() {
             <FilterBar/>
             <div className="stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:20}}>
               <StatCard icon="🏛️" value={pthList.length} label="Total PTH" color={T.navy}/>
-              <StatCard icon="📚" value={prodiList.length} label="Total Prodi" color={T.cyan}/>
+              <StatCard icon="📚" value={prodiListEnriched.length} label="Total Prodi" color={T.cyan}/>
               <StatCard icon="🎓" value={<span>{stats.mhs.total_aktif.toLocaleString("id-ID")}<GrowthBadge cur={stats.mhs.total_aktif} prev={prevMhsTotal}/></span>} label="Mahasiswa" color={T.blue} onClick={()=>navTo("statistik")}/>
               <StatCard icon="📍" value={[...new Set(pthList.map(p=>p.provinsi).filter(Boolean))].length} label="Provinsi" color={T.purple}/>
             </div>
@@ -935,7 +942,7 @@ function PublicDashboard() {
                 <table>
                   <thead><tr><th>Program Studi</th><th className="hide-mobile">PTH</th><th>Jenjang</th><th>Akreditasi</th><th>Mhs</th><th className="hide-mobile">Dosen</th></tr></thead>
                   <tbody>
-                    {prodiList.map(pr=>(
+                    {prodiListEnriched.map(pr=>(
                       <tr key={pr.id} onClick={()=>setSelectedProdi(pr)} style={{cursor:"pointer"}}>
                         <td><div style={{fontWeight:700,color:T.navy,fontSize:13}}>{pr.nama}</div><div style={{fontSize:11,color:T.muted}}>{pr.pth?.nama}</div></td>
                         <td className="hide-mobile" style={{color:T.muted,fontSize:12}}>{pr.pth?.nama}</td>
@@ -952,7 +959,7 @@ function PublicDashboard() {
           </div>
         ))}
 
-        {activePage==="statistik"&&<PageStatistik pthList={pthList} prodiList={prodiList} stats={stats} FilterBar={FilterBar} GrowthBadge={GrowthBadge} prevStats={{mhs:prevMhsTotal,dosen:prevDosenTotal,alumni:prevAlumniTotal}}/>}
+        {activePage==="statistik"&&<PageStatistik pthList={pthList} prodiList={prodiListEnriched} stats={stats} FilterBar={FilterBar} GrowthBadge={GrowthBadge} prevStats={{mhs:prevMhsTotal,dosen:prevDosenTotal,alumni:prevAlumniTotal}}/>}
 
         </>)}
       </div>
