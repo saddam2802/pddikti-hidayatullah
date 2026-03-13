@@ -1550,16 +1550,75 @@ function PageProfilPTH({ user }) {
   const [reqNamaBaru,setReqNamaBaru]=useState(""); const [reqAlasan,setReqAlasan]=useState("");
   const [reqSaving,setReqSaving]=useState(false); const [reqMsg,setReqMsg]=useState({type:"",text:""});
   const [pendingReq,setPendingReq]=useState(null);
+  const [pengurus,setPengurus]=useState([]);
+  const [editPengurus,setEditPengurus]=useState(false);
+  const [pengurusForm,setPengurusForm]=useState([]);
+  const [savingPengurus,setSavingPengurus]=useState(false);
+  const [pengurusMsg,setPengurusMsg]=useState({type:"",text:""});
 
   useEffect(()=>{
     Promise.all([
       supabase.from("pth").select("*").eq("id",user.pth_id).single(),
       supabase.from("prodi").select("*").eq("pth_id",user.pth_id),
       supabase.from("name_change_requests").select("*").eq("pth_id",user.pth_id).eq("status","pending").maybeSingle(),
-    ]).then(([{data:p},{data:pr},{data:req}])=>{
-      setPth(p||{}); setProdi(pr||[]); setForm(p||{}); setPendingReq(req); setLoading(false);
+      supabase.from("pengurus_pth").select("*,prodi(nama)").eq("pth_id",user.pth_id).order("jabatan"),
+    ]).then(([{data:p},{data:pr},{data:req},{data:peng}])=>{
+      setPth(p||{}); setProdi(pr||[]); setForm(p||{}); setPendingReq(req);
+      setPengurus(peng||[]); setLoading(false);
     });
   },[user.pth_id]);
+
+  const initPengurusForm = (prodiList) => {
+    // Buat form default: ketua, wakil_ketua, + 1 kaprodi per prodi
+    const rows = [
+      {jabatan:"ketua", label:"Ketua/Rektor", prodi_id:null, nama:""},
+      {jabatan:"wakil_ketua", label:"Wakil Ketua/Rektor", prodi_id:null, nama:""},
+      ...prodiList.map(p=>({jabatan:"kaprodi", label:`Kaprodi ${p.nama}`, prodi_id:p.id, nama:""})),
+    ];
+    // Isi dengan data yang sudah ada
+    return rows.map(r=>{
+      const existing = pengurus.find(pg=>
+        pg.jabatan===r.jabatan &&
+        (r.prodi_id ? pg.prodi_id===r.prodi_id : !pg.prodi_id)
+      );
+      return {...r, id:existing?.id||null, nama:existing?.nama||""};
+    });
+  };
+
+  const bukaEditPengurus = () => {
+    setPengurusForm(initPengurusForm(prodi));
+    setEditPengurus(true);
+    setPengurusMsg({type:"",text:""});
+  };
+
+  const simpanPengurus = async () => {
+    setSavingPengurus(true); setPengurusMsg({type:"",text:""});
+    try {
+      for(const r of pengurusForm){
+        if(!r.nama.trim()) {
+          // Kalau nama kosong dan ada id → hapus
+          if(r.id) await supabase.from("pengurus_pth").delete().eq("id",r.id);
+          continue;
+        }
+        if(r.id){
+          await supabase.from("pengurus_pth").update({nama:r.nama.trim(),updated_at:new Date().toISOString()}).eq("id",r.id);
+        } else {
+          await supabase.from("pengurus_pth").insert({
+            pth_id:user.pth_id, jabatan:r.jabatan,
+            nama:r.nama.trim(), prodi_id:r.prodi_id||null
+          });
+        }
+      }
+      // Reload pengurus
+      const {data:peng}=await supabase.from("pengurus_pth").select("*,prodi(nama)").eq("pth_id",user.pth_id).order("jabatan");
+      setPengurus(peng||[]);
+      setPengurusMsg({type:"success",text:"✅ Data pengurus berhasil disimpan!"});
+      setEditPengurus(false);
+    } catch(e){
+      setPengurusMsg({type:"error",text:"❌ Gagal: "+e.message});
+    }
+    setSavingPengurus(false);
+  };
 
   const save=async()=>{
     setSaving(true);
@@ -1649,6 +1708,54 @@ function PageProfilPTH({ user }) {
           </div>
         ))}
       </div>
+
+      {/* ── SEKSI PENGURUS ── */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",margin:"20px 0 12px"}}>
+        <h3 style={{fontWeight:800,color:T.navy}}>👥 Pengurus PTH</h3>
+        <button onClick={editPengurus?()=>setEditPengurus(false):bukaEditPengurus} className="btn-outline" style={{fontSize:12}}>
+          {editPengurus?"Batal":"✏️ Edit Pengurus"}
+        </button>
+      </div>
+      {pengurusMsg.text&&<Alert type={pengurusMsg.type} msg={pengurusMsg.text}/>}
+
+      {editPengurus?(
+        <div className="card" style={{padding:20}}>
+          {pengurusForm.map((r,i)=>(
+            <div key={i} style={{marginBottom:12}}>
+              <div style={{fontSize:11,color:T.muted,fontWeight:700,marginBottom:4}}>{r.label}</div>
+              <input value={r.nama} onChange={e=>{const nf=[...pengurusForm];nf[i]={...nf[i],nama:e.target.value};setPengurusForm(nf);}}
+                placeholder={`Nama ${r.label}`}
+                style={{width:"100%",padding:"8px 12px",borderRadius:8,border:`1.5px solid ${T.border}`,fontSize:13,boxSizing:"border-box"}}/>
+            </div>
+          ))}
+          <button onClick={simpanPengurus} disabled={savingPengurus} className="btn btn-primary" style={{width:"100%",marginTop:4}}>
+            {savingPengurus?"Menyimpan...":"💾 Simpan Pengurus"}
+          </button>
+        </div>
+      ):(
+        <div>
+          {pengurus.length===0?(
+            <div className="card" style={{padding:18,textAlign:"center",color:T.muted,fontSize:13}}>
+              Belum ada data pengurus — klik Edit Pengurus untuk mengisi.
+            </div>
+          ):(
+            <div className="two-col" style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10}}>
+              {[
+                ...pengurus.filter(p=>p.jabatan==="ketua"),
+                ...pengurus.filter(p=>p.jabatan==="wakil_ketua"),
+                ...pengurus.filter(p=>p.jabatan==="kaprodi"),
+              ].map(p=>(
+                <div key={p.id} className="card" style={{padding:14}}>
+                  <div style={{fontSize:10,color:T.muted,fontWeight:700,marginBottom:4}}>
+                    {p.jabatan==="ketua"?"👑 Ketua/Rektor":p.jabatan==="wakil_ketua"?"🏅 Wakil Ketua/Rektor":`📚 Kaprodi ${p.prodi?.nama||""}`}
+                  </div>
+                  <div style={{fontWeight:800,color:T.navy,fontSize:14}}>{p.nama}</div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -2014,6 +2121,7 @@ function AdminPanel({ user, onLogout }) {
   useEffect(()=>{loadUploads();if(isSuperAdmin)loadPTH();},[loadUploads,loadPTH,isSuperAdmin]);
 
   const NAV=[
+    {key:"profil",icon:"🏛️",label:"Profil PTH"},
     {key:"upload",icon:"📤",label:"Input Data"},
     {key:"history",icon:"📋",label:"Riwayat"},
     ...(isSuperAdmin?[
@@ -2022,7 +2130,7 @@ function AdminPanel({ user, onLogout }) {
       {key:"datapth",icon:"🏛️",label:"Data PTH"},
       {key:"users",icon:"👥",label:"Users"},
     ]:[
-      {key:"profil",icon:"🏛️",label:"Profil PTH"},
+
     ]),
   ];
 
