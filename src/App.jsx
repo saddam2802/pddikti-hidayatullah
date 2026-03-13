@@ -933,18 +933,29 @@ function PublicDashboard() {
               <div style={{marginTop:16}}>
                 <h3 style={{fontWeight:800,color:T.navy,marginBottom:12,fontSize:15}}>👥 Pengurus PTH</h3>
                 <div className="pth-grid" style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10}}>
-                  {[
-                    ...(pthPengurus[selectedPTH.id]||[]).filter(p=>p.jabatan==="ketua"),
-                    ...(pthPengurus[selectedPTH.id]||[]).filter(p=>p.jabatan==="wakil_ketua"),
-                    ...(pthPengurus[selectedPTH.id]||[]).filter(p=>p.jabatan==="kaprodi"),
-                  ].map(p=>(
-                    <div key={p.id} className="card" style={{padding:14}}>
-                      <div style={{fontSize:10,color:T.muted,fontWeight:700,marginBottom:4}}>
-                        {p.jabatan==="ketua"?"👑 Ketua/Rektor":p.jabatan==="wakil_ketua"?"🏅 Wakil Ketua/Rektor":`📚 Kaprodi ${p.prodi?.nama||""}`}
-                      </div>
-                      <div style={{fontWeight:800,color:T.navy,fontSize:13}}>{p.nama}</div>
-                    </div>
-                  ))}
+                  {(()=>{
+                    const pgList = pthPengurus[selectedPTH.id]||[];
+                    const wakilList = pgList.filter(p=>p.jabatan==="wakil_ketua");
+                    return [
+                      ...pgList.filter(p=>p.jabatan==="ketua"),
+                      ...wakilList,
+                      ...pgList.filter(p=>p.jabatan==="kaprodi"),
+                    ].map(p=>{
+                      let jabatanLabel = "";
+                      if(p.jabatan==="ketua") jabatanLabel="👑 Ketua/Rektor";
+                      else if(p.jabatan==="kaprodi") jabatanLabel=`📚 Kaprodi ${p.prodi?.nama||""}`;
+                      else {
+                        const idx = wakilList.findIndex(w=>w.id===p.id);
+                        jabatanLabel = wakilList.length>1?`🏅 Wakil Ketua/Rektor ${idx+1}`:"🏅 Wakil Ketua/Rektor";
+                      }
+                      return (
+                        <div key={p.id} className="card" style={{padding:14}}>
+                          <div style={{fontSize:10,color:T.muted,fontWeight:700,marginBottom:4}}>{jabatanLabel}</div>
+                          <div style={{fontWeight:800,color:T.navy,fontSize:13}}>{p.nama}</div>
+                        </div>
+                      );
+                    });
+                  })()}
                 </div>
               </div>
             )}
@@ -1612,19 +1623,20 @@ function PageProfilPTH({ user }) {
     // Ketua
     const ketuaExist = pengurus.find(pg=>pg.jabatan==="ketua");
     const rows = [
-      {jabatan:"ketua", label:"Ketua/Rektor", prodi_id:null, id:ketuaExist?.id||null, nama:ketuaExist?.nama||""},
+      {jabatan:"ketua", label:"Ketua/Rektor", prodi_id:null, id:ketuaExist?.id||null, nama:ketuaExist?.nama||"", urutan:0},
     ];
-    // Wakil Ketua — ambil semua yang ada, minimal 1 slot kosong
-    const wakilExist = pengurus.filter(pg=>pg.jabatan==="wakil_ketua");
+    // Wakil Ketua — urutkan berdasarkan field urutan, minimal 1 slot kosong
+    const wakilExist = [...pengurus.filter(pg=>pg.jabatan==="wakil_ketua")]
+      .sort((a,b)=>(a.urutan||0)-(b.urutan||0));
     if(wakilExist.length===0){
-      rows.push({jabatan:"wakil_ketua", label:"Wakil Ketua/Rektor 1", prodi_id:null, id:null, nama:""});
+      rows.push({jabatan:"wakil_ketua", label:"Wakil Ketua/Rektor 1", prodi_id:null, id:null, nama:"", urutan:1});
     } else {
-      wakilExist.forEach((wk,i)=>rows.push({jabatan:"wakil_ketua", label:`Wakil Ketua/Rektor ${i+1}`, prodi_id:null, id:wk.id, nama:wk.nama}));
+      wakilExist.forEach((wk,i)=>rows.push({jabatan:"wakil_ketua", label:`Wakil Ketua/Rektor ${i+1}`, prodi_id:null, id:wk.id, nama:wk.nama, urutan:i+1}));
     }
     // Kaprodi per prodi
-    prodiList.forEach(p=>{
+    prodiList.forEach((p,i)=>{
       const kp = pengurus.find(pg=>pg.jabatan==="kaprodi"&&pg.prodi_id===p.id);
-      rows.push({jabatan:"kaprodi", label:`Kaprodi ${p.nama}`, prodi_id:p.id, id:kp?.id||null, nama:kp?.nama||""});
+      rows.push({jabatan:"kaprodi", label:`Kaprodi ${p.nama}`, prodi_id:p.id, id:kp?.id||null, nama:kp?.nama||"", urutan:i});
     });
     return rows;
   };
@@ -1632,13 +1644,11 @@ function PageProfilPTH({ user }) {
   const tambahWakil = () => {
     const jumlahWakil = pengurusForm.filter(r=>r.jabatan==="wakil_ketua").length;
     if(jumlahWakil>=10) return;
-    // Sisipkan setelah wakil terakhir
     const lastWakilIdx = pengurusForm.map(r=>r.jabatan).lastIndexOf("wakil_ketua");
     const newForm = [...pengurusForm];
-    newForm.splice(lastWakilIdx+1, 0, {jabatan:"wakil_ketua", label:`Wakil Ketua/Rektor ${jumlahWakil+1}`, prodi_id:null, id:null, nama:""});
-    // Re-label semua wakil
+    newForm.splice(lastWakilIdx+1, 0, {jabatan:"wakil_ketua", label:`Wakil Ketua/Rektor ${jumlahWakil+1}`, prodi_id:null, id:null, nama:"", urutan:jumlahWakil+1});
     let wIdx=1;
-    newForm.forEach(r=>{ if(r.jabatan==="wakil_ketua") r.label=`Wakil Ketua/Rektor ${wIdx++}`; });
+    newForm.forEach(r=>{ if(r.jabatan==="wakil_ketua"){r.label=`Wakil Ketua/Rektor ${wIdx}`;r.urutan=wIdx++;} });
     setPengurusForm(newForm);
   };
 
@@ -1665,11 +1675,11 @@ function PageProfilPTH({ user }) {
           continue;
         }
         if(r.id){
-          await supabase.from("pengurus_pth").update({nama:r.nama.trim(),updated_at:new Date().toISOString()}).eq("id",r.id);
+          await supabase.from("pengurus_pth").update({nama:r.nama.trim(),urutan:r.urutan||0,updated_at:new Date().toISOString()}).eq("id",r.id);
         } else {
           await supabase.from("pengurus_pth").insert({
             pth_id:user.pth_id, jabatan:r.jabatan,
-            nama:r.nama.trim(), prodi_id:r.prodi_id||null
+            nama:r.nama.trim(), prodi_id:r.prodi_id||null, urutan:r.urutan||0
           });
         }
       }
@@ -1815,14 +1825,39 @@ function PageProfilPTH({ user }) {
             </div>
           ):(
             <div className="two-col" style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10}}>
-              {[
-                ...pengurus.filter(p=>p.jabatan==="ketua"),
-                ...pengurus.filter(p=>p.jabatan==="wakil_ketua"),
-                ...pengurus.filter(p=>p.jabatan==="kaprodi"),
-              ].map(p=>(
+              {(()=>{
+                const wakilList = pengurus.filter(p=>p.jabatan==="wakil_ketua");
+                return [
+                  ...pengurus.filter(p=>p.jabatan==="ketua"),
+                  ...wakilList,
+                  ...pengurus.filter(p=>p.jabatan==="kaprodi"),
+                ].map(p=>{
+                  let jabatanLabel = "";
+                  if(p.jabatan==="ketua") jabatanLabel="👑 Ketua/Rektor";
+                  else if(p.jabatan==="kaprodi") jabatanLabel=`📚 Kaprodi ${p.prodi?.nama||""}`;
+                  else {
+                    const idx = wakilList.findIndex(w=>w.id===p.id);
+                    jabatanLabel = wakilList.length>1?`🏅 Wakil Ketua/Rektor ${idx+1}`:"🏅 Wakil Ketua/Rektor";
+                  }
+                  return (
                 <div key={p.id} className="card" style={{padding:14}}>
-                  <div style={{fontSize:10,color:T.muted,fontWeight:700,marginBottom:4}}>
-                    {p.jabatan==="ketua"?"👑 Ketua/Rektor":p.jabatan==="wakil_ketua"?"🏅 Wakil Ketua/Rektor":`📚 Kaprodi ${p.prodi?.nama||""}`}
+                  <div style={{fontSize:10,color:T.muted,fontWeight:700,marginBottom:4}}>{jabatanLabel}</div>
+                  <div style={{fontWeight:800,color:T.navy,fontSize:14}}>{p.nama}</div>
+                </div>
+                  );
+                });
+              })()}
+                    {(()=>{
+                      if(p.jabatan==="ketua") return "👑 Ketua/Rektor";
+                      if(p.jabatan==="kaprodi") return `📚 Kaprodi ${p.prodi?.nama||""}`;
+                      // Hitung urutan wakil ketua ini
+                      const wakilList = [
+                        ...(pengurus.filter?pengurus.filter(x=>x.jabatan==="wakil_ketua"):
+                           (pthPengurus[selectedPTH?.id]||[]).filter(x=>x.jabatan==="wakil_ketua"))
+                      ];
+                      const idx = wakilList.findIndex(x=>x.id===p.id);
+                      return wakilList.length>1?`🏅 Wakil Ketua/Rektor ${idx+1}`:"🏅 Wakil Ketua/Rektor";
+                    })()}
                   </div>
                   <div style={{fontWeight:800,color:T.navy,fontSize:14}}>{p.nama}</div>
                 </div>
