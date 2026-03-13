@@ -945,8 +945,7 @@ function PublicDashboard() {
                       if(p.jabatan==="ketua") jabatanLabel="👑 Ketua/Rektor";
                       else if(p.jabatan==="kaprodi") jabatanLabel=`📚 Kaprodi ${p.prodi?.nama||""}`;
                       else {
-                        const idx = wakilList.findIndex(w=>w.id===p.id);
-                        jabatanLabel = wakilList.length>1?`🏅 Wakil Ketua/Rektor ${idx+1}`:"🏅 Wakil Ketua/Rektor";
+                        jabatanLabel = "🏅 Wakil Ketua/Rektor";
                       }
                       return (
                         <div key={p.id} className="card" style={{padding:14}}>
