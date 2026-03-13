@@ -1227,9 +1227,193 @@ function PageUpload({ user, onDone }) {
 }
 
 /* ── PAGE HISTORY ── */
-function PageHistory({ uploads, loading, isSuperAdmin }) {
+function PageHistory({ uploads, loading, isSuperAdmin, user, onRefresh }) {
   const sc=s=>s==="approved"?T.green:s==="rejected"?T.red:T.orange;
   const sl=s=>s==="approved"?"Approved":s==="rejected"?"Ditolak":"Menunggu";
+  const [koreksiUpload,setKoreksiUpload]=useState(null); // upload yang sedang dikoreksi
+  const [koreksiData,setKoreksiData]=useState(null);     // data lengkap upload ini
+  const [koreksiLoading,setKoreksiLoading]=useState(false);
+  const [saving,setSaving]=useState(false);
+  const [msg,setMsg]=useState({type:"",text:""});
+
+  const bukaKoreksi = async (u) => {
+    setKoreksiUpload(u); setKoreksiLoading(true); setMsg({type:"",text:""});
+    const [mhs,dos,pen,ks,td] = await Promise.all([
+      supabase.from("data_mahasiswa").select("*,prodi(nama)").eq("upload_id",u.id),
+      supabase.from("data_dosen").select("*,prodi(nama)").eq("upload_id",u.id),
+      supabase.from("data_penelitian").select("*").eq("upload_id",u.id),
+      supabase.from("data_kerjasama").select("*").eq("upload_id",u.id),
+      supabase.from("data_tendik").select("*,prodi(nama)").eq("upload_id",u.id),
+    ]);
+    setKoreksiData({
+      mhs:mhs.data||[], dos:dos.data||[], pen:pen.data||[],
+      ks:ks.data||[], td:td.data||[]
+    });
+    setKoreksiLoading(false);
+  };
+
+  const updateField = (tipe, id, field, val) => {
+    setKoreksiData(prev=>({
+      ...prev,
+      [tipe]:prev[tipe].map(r=>r.id===id?{...r,[field]:parseFloat(val)||0}:r)
+    }));
+  };
+
+  const simpanKoreksi = async () => {
+    setSaving(true); setMsg({type:"",text:""});
+    try {
+      // Update semua data
+      for(const r of koreksiData.mhs){
+        await supabase.from("data_mahasiswa").update({
+          student_body:r.student_body,total_mhs_aktif:r.total_mhs_aktif,
+          mhs_aktif_kader:r.mhs_aktif_kader,mhs_aktif_non_kader:r.mhs_aktif_non_kader,
+          total_mhs_baru:r.total_mhs_baru,mhs_baru_kader:r.mhs_baru_kader,
+          mhs_baru_non_kader:r.mhs_baru_non_kader,
+          prestasi_dalam_negeri:r.prestasi_dalam_negeri,prestasi_internasional:r.prestasi_internasional,
+        }).eq("id",r.id);
+      }
+      for(const r of koreksiData.dos){
+        await supabase.from("data_dosen").update({
+          dosen_s2:r.dosen_s2,dosen_s3:r.dosen_s3,
+          tanpa_jad_kader:r.tanpa_jad_kader,tanpa_jad_non_kader:r.tanpa_jad_non_kader,
+          asisten_ahli_kader:r.asisten_ahli_kader,asisten_ahli_non_kader:r.asisten_ahli_non_kader,
+          lektor_kader:r.lektor_kader,lektor_non_kader:r.lektor_non_kader,
+          lektor_kepala_kader:r.lektor_kepala_kader,lektor_kepala_non_kader:r.lektor_kepala_non_kader,
+          guru_besar_kader:r.guru_besar_kader,guru_besar_non_kader:r.guru_besar_non_kader,
+        }).eq("id",r.id);
+      }
+      for(const r of koreksiData.td){
+        await supabase.from("data_tendik").update({
+          tendik_kader:r.tendik_kader,tendik_non_kader:r.tendik_non_kader,
+        }).eq("id",r.id);
+      }
+      for(const r of koreksiData.pen){
+        await supabase.from("data_penelitian").update({
+          sinta_score:r.sinta_score,gscholar_artikel:r.gscholar_artikel,
+          gscholar_citation:r.gscholar_citation,scopus_artikel:r.scopus_artikel,
+          scopus_citation:r.scopus_citation,hibah_pemerintah:r.hibah_pemerintah,
+          hibah_eksternal:r.hibah_eksternal,
+        }).eq("id",r.id);
+      }
+      for(const r of koreksiData.ks){
+        await supabase.from("data_kerjasama").update({
+          alumni_kader:r.alumni_kader,alumni_non_kader:r.alumni_non_kader,
+          kerjasama_dn:r.kerjasama_dn,kerjasama_ln:r.kerjasama_ln,
+        }).eq("id",r.id);
+      }
+      setMsg({type:"success",text:"✅ Data berhasil dikoreksi!"});
+      if(onRefresh) onRefresh();
+    } catch(e){
+      setMsg({type:"error",text:"Gagal menyimpan: "+e.message});
+    }
+    setSaving(false);
+  };
+
+  const KoreksiField = ({label,tipe,id,field,value}) => (
+    <div style={{marginBottom:8}}>
+      <div style={{fontSize:11,color:T.muted,fontWeight:700,marginBottom:3}}>{label}</div>
+      <input type="number" min="0" value={value||0}
+        onChange={e=>updateField(tipe,id,field,e.target.value)}
+        style={{width:"100%",padding:"6px 10px",borderRadius:7,border:`1.5px solid ${T.border}`,fontSize:13,fontFamily:"'DM Mono',monospace",fontWeight:700}}/>
+    </div>
+  );
+
+  if(koreksiUpload) return (
+    <div className="fade-up">
+      <BackBtn onClick={()=>{setKoreksiUpload(null);setKoreksiData(null);setMsg({type:"",text:""});}}/>
+      <SectionTitle title="✏️ Koreksi Data" sub={`${koreksiUpload.pth?.nama||""} • ${koreksiUpload.semester} ${koreksiUpload.tahun_akademik}`}/>
+      {msg.text&&<Alert type={msg.type} msg={msg.text}/>}
+      {koreksiLoading?<Spin/>:koreksiData&&(<>
+
+        {/* Mahasiswa per Prodi */}
+        {koreksiData.mhs.map(r=>(
+          <div key={r.id} className="card" style={{padding:18,marginBottom:12}}>
+            <h4 style={{fontWeight:800,color:T.navy,marginBottom:12}}>🎓 Mahasiswa — {r.prodi?.nama}</h4>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+              <KoreksiField label="Student Body" tipe="mhs" id={r.id} field="student_body" value={r.student_body}/>
+              <KoreksiField label="Total Aktif" tipe="mhs" id={r.id} field="total_mhs_aktif" value={r.total_mhs_aktif}/>
+              <KoreksiField label="Aktif Kader" tipe="mhs" id={r.id} field="mhs_aktif_kader" value={r.mhs_aktif_kader}/>
+              <KoreksiField label="Aktif Non-Kader" tipe="mhs" id={r.id} field="mhs_aktif_non_kader" value={r.mhs_aktif_non_kader}/>
+              <KoreksiField label="Total Baru" tipe="mhs" id={r.id} field="total_mhs_baru" value={r.total_mhs_baru}/>
+              <KoreksiField label="Baru Kader" tipe="mhs" id={r.id} field="mhs_baru_kader" value={r.mhs_baru_kader}/>
+              <KoreksiField label="Baru Non-Kader" tipe="mhs" id={r.id} field="mhs_baru_non_kader" value={r.mhs_baru_non_kader}/>
+              <KoreksiField label="Prestasi DN" tipe="mhs" id={r.id} field="prestasi_dalam_negeri" value={r.prestasi_dalam_negeri}/>
+              <KoreksiField label="Prestasi Intl" tipe="mhs" id={r.id} field="prestasi_internasional" value={r.prestasi_internasional}/>
+            </div>
+          </div>
+        ))}
+
+        {/* Dosen per Prodi */}
+        {koreksiData.dos.map(r=>(
+          <div key={r.id} className="card" style={{padding:18,marginBottom:12}}>
+            <h4 style={{fontWeight:800,color:T.teal,marginBottom:12}}>👩‍🏫 Dosen — {r.prodi?.nama}</h4>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+              <KoreksiField label="Dosen S2" tipe="dos" id={r.id} field="dosen_s2" value={r.dosen_s2}/>
+              <KoreksiField label="Dosen S3" tipe="dos" id={r.id} field="dosen_s3" value={r.dosen_s3}/>
+              <KoreksiField label="Tanpa JAD Kader" tipe="dos" id={r.id} field="tanpa_jad_kader" value={r.tanpa_jad_kader}/>
+              <KoreksiField label="Tanpa JAD Non-Kader" tipe="dos" id={r.id} field="tanpa_jad_non_kader" value={r.tanpa_jad_non_kader}/>
+              <KoreksiField label="Asisten Ahli Kader" tipe="dos" id={r.id} field="asisten_ahli_kader" value={r.asisten_ahli_kader}/>
+              <KoreksiField label="Asisten Ahli Non-Kader" tipe="dos" id={r.id} field="asisten_ahli_non_kader" value={r.asisten_ahli_non_kader}/>
+              <KoreksiField label="Lektor Kader" tipe="dos" id={r.id} field="lektor_kader" value={r.lektor_kader}/>
+              <KoreksiField label="Lektor Non-Kader" tipe="dos" id={r.id} field="lektor_non_kader" value={r.lektor_non_kader}/>
+              <KoreksiField label="Lektor Kepala Kader" tipe="dos" id={r.id} field="lektor_kepala_kader" value={r.lektor_kepala_kader}/>
+              <KoreksiField label="Lektor Kepala Non-Kader" tipe="dos" id={r.id} field="lektor_kepala_non_kader" value={r.lektor_kepala_non_kader}/>
+              <KoreksiField label="Guru Besar Kader" tipe="dos" id={r.id} field="guru_besar_kader" value={r.guru_besar_kader}/>
+              <KoreksiField label="Guru Besar Non-Kader" tipe="dos" id={r.id} field="guru_besar_non_kader" value={r.guru_besar_non_kader}/>
+            </div>
+          </div>
+        ))}
+
+        {/* Tendik per Prodi */}
+        {koreksiData.td.length>0&&koreksiData.td.map(r=>(
+          <div key={r.id} className="card" style={{padding:18,marginBottom:12}}>
+            <h4 style={{fontWeight:800,color:T.purple,marginBottom:12}}>🏢 Tendik — {r.prodi?.nama}</h4>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8}}>
+              <KoreksiField label="Tendik Kader" tipe="td" id={r.id} field="tendik_kader" value={r.tendik_kader}/>
+              <KoreksiField label="Tendik Non-Kader" tipe="td" id={r.id} field="tendik_non_kader" value={r.tendik_non_kader}/>
+            </div>
+          </div>
+        ))}
+
+        {/* Penelitian level PTH */}
+        {koreksiData.pen.map(r=>(
+          <div key={r.id} className="card" style={{padding:18,marginBottom:12}}>
+            <h4 style={{fontWeight:800,color:T.blue,marginBottom:12}}>🔬 Penelitian & PkM</h4>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8}}>
+              <KoreksiField label="Sinta Score" tipe="pen" id={r.id} field="sinta_score" value={r.sinta_score}/>
+              <KoreksiField label="GScholar Artikel" tipe="pen" id={r.id} field="gscholar_artikel" value={r.gscholar_artikel}/>
+              <KoreksiField label="GScholar Citation" tipe="pen" id={r.id} field="gscholar_citation" value={r.gscholar_citation}/>
+              <KoreksiField label="Scopus Artikel" tipe="pen" id={r.id} field="scopus_artikel" value={r.scopus_artikel}/>
+              <KoreksiField label="Scopus Citation" tipe="pen" id={r.id} field="scopus_citation" value={r.scopus_citation}/>
+              <KoreksiField label="Hibah Pemerintah" tipe="pen" id={r.id} field="hibah_pemerintah" value={r.hibah_pemerintah}/>
+              <KoreksiField label="Hibah Eksternal" tipe="pen" id={r.id} field="hibah_eksternal" value={r.hibah_eksternal}/>
+            </div>
+          </div>
+        ))}
+
+        {/* Kerjasama & Alumni level PTH */}
+        {koreksiData.ks.map(r=>(
+          <div key={r.id} className="card" style={{padding:18,marginBottom:12}}>
+            <h4 style={{fontWeight:800,color:T.green,marginBottom:12}}>🤝 Kerjasama & Alumni</h4>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:8}}>
+              <KoreksiField label="Alumni Kader" tipe="ks" id={r.id} field="alumni_kader" value={r.alumni_kader}/>
+              <KoreksiField label="Alumni Non-Kader" tipe="ks" id={r.id} field="alumni_non_kader" value={r.alumni_non_kader}/>
+              <KoreksiField label="Kerjasama DN" tipe="ks" id={r.id} field="kerjasama_dn" value={r.kerjasama_dn}/>
+              <KoreksiField label="Kerjasama LN" tipe="ks" id={r.id} field="kerjasama_ln" value={r.kerjasama_ln}/>
+            </div>
+          </div>
+        ))}
+
+        <div style={{display:"flex",gap:10,marginTop:8}}>
+          <button onClick={()=>{setKoreksiUpload(null);setKoreksiData(null);}} className="btn btn-ghost">Batal</button>
+          <button onClick={simpanKoreksi} disabled={saving} className="btn btn-primary" style={{flex:1}}>
+            {saving?"Menyimpan...":"💾 Simpan Koreksi"}
+          </button>
+        </div>
+      </>)}
+    </div>
+  );
+
   return (
     <div>
       <SectionTitle title="📋 Riwayat Upload"/>
@@ -1237,10 +1421,10 @@ function PageHistory({ uploads, loading, isSuperAdmin }) {
         <div className="card" style={{overflow:"hidden"}}>
           <div className="table-wrap">
             <table>
-              <thead><tr>{isSuperAdmin&&<th>PTH</th>}<th>Semester</th><th>TA</th><th className="hide-mobile">File</th><th>Status</th><th className="hide-mobile">Tanggal</th></tr></thead>
+              <thead><tr>{isSuperAdmin&&<th>PTH</th>}<th>Semester</th><th>TA</th><th className="hide-mobile">File</th><th>Status</th><th className="hide-mobile">Tanggal</th>{!isSuperAdmin&&<th></th>}</tr></thead>
               <tbody>
                 {uploads.length===0?(
-                  <tr><td colSpan={6} style={{textAlign:"center",color:T.muted,padding:32}}>Belum ada data upload</td></tr>
+                  <tr><td colSpan={7} style={{textAlign:"center",color:T.muted,padding:32}}>Belum ada data upload</td></tr>
                 ):uploads.map((u,i)=>(
                   <tr key={i}>
                     {isSuperAdmin&&<td style={{fontWeight:700,color:T.navy,fontSize:12}}>{u.pth?.nama||"-"}</td>}
@@ -1249,6 +1433,13 @@ function PageHistory({ uploads, loading, isSuperAdmin }) {
                     <td className="hide-mobile" style={{color:T.muted,fontSize:11}}>{u.filename}</td>
                     <td><Tag label={sl(u.status)} color={sc(u.status)}/></td>
                     <td className="hide-mobile" style={{color:T.muted,fontSize:11}}>{new Date(u.created_at).toLocaleDateString("id-ID")}</td>
+                    {!isSuperAdmin&&(
+                      <td>
+                        {u.status==="approved"&&(
+                          <button onClick={()=>bukaKoreksi(u)} className="btn-outline" style={{fontSize:11,padding:"4px 10px"}}>✏️ Koreksi</button>
+                        )}
+                      </td>
+                    )}
                   </tr>
                 ))}
               </tbody>
@@ -1814,7 +2005,7 @@ function AdminPanel({ user, onLogout }) {
 
       <main className="main-content" style={{flex:1,overflow:"auto",padding:"20px"}}>
         {page==="upload"&&<PageUpload user={user} onDone={loadUploads}/>}
-        {page==="history"&&<PageHistory uploads={uploads} loading={loadingData} isSuperAdmin={isSuperAdmin}/>}
+        {page==="history"&&<PageHistory uploads={uploads} loading={loadingData} isSuperAdmin={isSuperAdmin} user={user} onRefresh={loadUploads}/>}
         {page==="approval"&&isSuperAdmin&&<PageApproval uploads={uploads.filter(u=>u.status==="pending")} onRefresh={loadUploads}/>}
         {page==="rekap"&&isSuperAdmin&&<PageRekap pthList={pthList}/>}
         {page==="datapth"&&isSuperAdmin&&<PageDataPTH pthList={pthList} onRefreshPTH={loadPTH}/>}
