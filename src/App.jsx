@@ -1670,26 +1670,30 @@ function PageProfilPTH({ user }) {
     try {
       for(const r of pengurusForm){
         if(!r.nama.trim()) {
-          // Kalau nama kosong dan ada id → hapus
-          if(r.id) await supabase.from("pengurus_pth").delete().eq("id",r.id);
+          if(r.id){
+            const {error:delErr}=await supabase.from("pengurus_pth").delete().eq("id",r.id);
+            if(delErr) throw new Error("Hapus gagal: "+delErr.message);
+          }
           continue;
         }
         if(r.id){
-          await supabase.from("pengurus_pth").update({nama:r.nama.trim(),bidang:(r.bidang||"").trim(),urutan:r.urutan||0,updated_at:new Date().toISOString()}).eq("id",r.id);
+          const {error:updErr}=await supabase.from("pengurus_pth")
+            .update({nama:r.nama.trim(),urutan:r.urutan||0,updated_at:new Date().toISOString()})
+            .eq("id",r.id);
+          if(updErr) throw new Error("Update gagal: "+updErr.message);
         } else {
-          await supabase.from("pengurus_pth").insert({
-            pth_id:user.pth_id, jabatan:r.jabatan,
-            nama:r.nama.trim(), bidang:(r.bidang||"").trim()||null, prodi_id:r.prodi_id||null, urutan:r.urutan||0
-          });
+          const {error:insErr}=await supabase.from("pengurus_pth")
+            .insert({pth_id:parseInt(user.pth_id), jabatan:r.jabatan, nama:r.nama.trim(), prodi_id:r.prodi_id?parseInt(r.prodi_id):null, urutan:r.urutan||0});
+          if(insErr) throw new Error("Insert gagal: "+insErr.message);
         }
       }
-      // Reload pengurus
-      const {data:peng}=await supabase.from("pengurus_pth").select("*,prodi(nama)").eq("pth_id",user.pth_id).order("jabatan");
+      const {data:peng, error:selErr}=await supabase.from("pengurus_pth").select("*,prodi(nama)").eq("pth_id",user.pth_id).order("urutan");
+      if(selErr) throw new Error("Reload gagal: "+selErr.message);
       setPengurus(peng||[]);
       setPengurusMsg({type:"success",text:"✅ Data pengurus berhasil disimpan!"});
       setEditPengurus(false);
     } catch(e){
-      setPengurusMsg({type:"error",text:"❌ Gagal: "+e.message});
+      setPengurusMsg({type:"error",text:"❌ "+e.message});
     }
     setSavingPengurus(false);
   };
