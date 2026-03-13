@@ -1625,13 +1625,13 @@ function PageProfilPTH({ user }) {
     const rows = [
       {jabatan:"ketua", label:"Ketua/Rektor", prodi_id:null, id:ketuaExist?.id||null, nama:ketuaExist?.nama||"", urutan:0},
     ];
-    // Wakil Ketua — urutkan berdasarkan field urutan, minimal 1 slot kosong
+    // Wakil Ketua — ambil semua, urutkan by urutan
     const wakilExist = [...pengurus.filter(pg=>pg.jabatan==="wakil_ketua")]
       .sort((a,b)=>(a.urutan||0)-(b.urutan||0));
     if(wakilExist.length===0){
-      rows.push({jabatan:"wakil_ketua", label:"Wakil Ketua/Rektor 1", prodi_id:null, id:null, nama:"", urutan:1});
+      rows.push({jabatan:"wakil_ketua", label:"Wakil Ketua/Rektor", prodi_id:null, id:null, nama:"", bidang:"", urutan:1});
     } else {
-      wakilExist.forEach((wk,i)=>rows.push({jabatan:"wakil_ketua", label:`Wakil Ketua/Rektor ${i+1}`, prodi_id:null, id:wk.id, nama:wk.nama, urutan:i+1}));
+      wakilExist.forEach((wk,i)=>rows.push({jabatan:"wakil_ketua", label:"Wakil Ketua/Rektor", prodi_id:null, id:wk.id, nama:wk.nama, bidang:wk.bidang||"", urutan:i+1}));
     }
     // Kaprodi per prodi
     prodiList.forEach((p,i)=>{
@@ -1646,9 +1646,9 @@ function PageProfilPTH({ user }) {
     if(jumlahWakil>=10) return;
     const lastWakilIdx = pengurusForm.map(r=>r.jabatan).lastIndexOf("wakil_ketua");
     const newForm = [...pengurusForm];
-    newForm.splice(lastWakilIdx+1, 0, {jabatan:"wakil_ketua", label:`Wakil Ketua/Rektor ${jumlahWakil+1}`, prodi_id:null, id:null, nama:"", urutan:jumlahWakil+1});
+    newForm.splice(lastWakilIdx+1, 0, {jabatan:"wakil_ketua", label:"Wakil Ketua/Rektor", prodi_id:null, id:null, nama:"", bidang:"", urutan:jumlahWakil+1});
     let wIdx=1;
-    newForm.forEach(r=>{ if(r.jabatan==="wakil_ketua"){r.label=`Wakil Ketua/Rektor ${wIdx}`;r.urutan=wIdx++;} });
+    newForm.forEach(r=>{ if(r.jabatan==="wakil_ketua"){r.urutan=wIdx++;} });
     setPengurusForm(newForm);
   };
 
@@ -1675,11 +1675,11 @@ function PageProfilPTH({ user }) {
           continue;
         }
         if(r.id){
-          await supabase.from("pengurus_pth").update({nama:r.nama.trim(),urutan:r.urutan||0,updated_at:new Date().toISOString()}).eq("id",r.id);
+          await supabase.from("pengurus_pth").update({nama:r.nama.trim(),bidang:(r.bidang||"").trim(),urutan:r.urutan||0,updated_at:new Date().toISOString()}).eq("id",r.id);
         } else {
           await supabase.from("pengurus_pth").insert({
             pth_id:user.pth_id, jabatan:r.jabatan,
-            nama:r.nama.trim(), prodi_id:r.prodi_id||null, urutan:r.urutan||0
+            nama:r.nama.trim(), bidang:(r.bidang||"").trim()||null, prodi_id:r.prodi_id||null, urutan:r.urutan||0
           });
         }
       }
@@ -1802,9 +1802,20 @@ function PageProfilPTH({ user }) {
                   <button onClick={()=>hapusWakil(i)} style={{background:"none",border:"none",color:T.red,cursor:"pointer",fontSize:16,padding:"0 4px",lineHeight:1}}>✕</button>
                 )}
               </div>
-              <input value={r.nama} onChange={e=>{const nf=[...pengurusForm];nf[i]={...nf[i],nama:e.target.value};setPengurusForm(nf);}}
-                placeholder={`Nama ${r.label}`}
-                style={{width:"100%",padding:"8px 12px",borderRadius:8,border:`1.5px solid ${T.border}`,fontSize:13,boxSizing:"border-box"}}/>
+              {r.jabatan==="wakil_ketua"?(
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                  <input value={r.bidang||""} onChange={e=>{const nf=[...pengurusForm];nf[i]={...nf[i],bidang:e.target.value};setPengurusForm(nf);}}
+                    placeholder="Bidang (cth: Akademik)"
+                    style={{padding:"8px 12px",borderRadius:8,border:`1.5px solid ${T.blue}44`,fontSize:13,boxSizing:"border-box"}}/>
+                  <input value={r.nama} onChange={e=>{const nf=[...pengurusForm];nf[i]={...nf[i],nama:e.target.value};setPengurusForm(nf);}}
+                    placeholder="Nama"
+                    style={{padding:"8px 12px",borderRadius:8,border:`1.5px solid ${T.border}`,fontSize:13,boxSizing:"border-box"}}/>
+                </div>
+              ):(
+                <input value={r.nama} onChange={e=>{const nf=[...pengurusForm];nf[i]={...nf[i],nama:e.target.value};setPengurusForm(nf);}}
+                  placeholder={`Nama ${r.label}`}
+                  style={{width:"100%",padding:"8px 12px",borderRadius:8,border:`1.5px solid ${T.border}`,fontSize:13,boxSizing:"border-box"}}/>
+              )}
               {/* Tombol tambah wakil — muncul setelah input wakil terakhir */}
               {r.jabatan==="wakil_ketua"&&i===pengurusForm.map(x=>x.jabatan).lastIndexOf("wakil_ketua")&&pengurusForm.filter(x=>x.jabatan==="wakil_ketua").length<10&&(
                 <button onClick={tambahWakil} style={{marginTop:6,background:"none",border:`1.5px dashed ${T.blue}`,borderRadius:7,color:T.blue,fontSize:11,fontWeight:700,padding:"5px 12px",cursor:"pointer",width:"100%"}}>
@@ -1836,8 +1847,7 @@ function PageProfilPTH({ user }) {
                   if(p.jabatan==="ketua") jabatanLabel="👑 Ketua/Rektor";
                   else if(p.jabatan==="kaprodi") jabatanLabel=`📚 Kaprodi ${p.prodi?.nama||""}`;
                   else {
-                    const idx = wakilList.findIndex(w=>w.id===p.id);
-                    jabatanLabel = wakilList.length>1?`🏅 Wakil Ketua/Rektor ${idx+1}`:"🏅 Wakil Ketua/Rektor";
+                    jabatanLabel = p.bidang?`🏅 Wakil Ketua/Rektor Bid. ${p.bidang}`:"🏅 Wakil Ketua/Rektor";
                   }
                   return (
                 <div key={p.id} className="card" style={{padding:14}}>
