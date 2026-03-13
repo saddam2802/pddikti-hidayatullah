@@ -950,7 +950,9 @@ function PublicDashboard() {
                       }
                       return (
                         <div key={p.id} className="card" style={{padding:14}}>
-                          <div style={{fontSize:10,color:T.muted,fontWeight:700,marginBottom:4}}>{jabatanLabel}</div>
+                          <div style={{fontSize:10,color:T.muted,fontWeight:700,marginBottom:4}}>
+                            {jabatanLabel}{p.jabatan==="wakil_ketua"&&p.bidang?` — ${p.bidang}`:""}
+                          </div>
                           <div style={{fontWeight:800,color:T.navy,fontSize:13}}>{p.nama}</div>
                         </div>
                       );
@@ -1678,16 +1680,16 @@ function PageProfilPTH({ user }) {
         }
         if(r.id){
           const {error:updErr}=await supabase.from("pengurus_pth")
-            .update({nama:r.nama.trim(),urutan:r.urutan||0,updated_at:new Date().toISOString()})
+            .update({nama:r.nama.trim(),urutan:r.urutan||0,bidang:(r.bidang||"").trim()||null,updated_at:new Date().toISOString()})
             .eq("id",r.id);
           if(updErr) throw new Error("Update gagal: "+updErr.message);
         } else {
           const {error:insErr}=await supabase.from("pengurus_pth")
-            .insert({pth_id:parseInt(user.pth_id), jabatan:r.jabatan, nama:r.nama.trim(), prodi_id:r.prodi_id?parseInt(r.prodi_id):null, urutan:r.urutan||0});
+            .insert({pth_id:parseInt(user.pth_id), jabatan:r.jabatan, nama:r.nama.trim(), prodi_id:r.prodi_id?parseInt(r.prodi_id):null, urutan:r.urutan||0, bidang:(r.bidang||'').trim()||null});
           if(insErr) throw new Error("Insert gagal: "+insErr.message);
         }
       }
-      const {data:peng, error:selErr}=await supabase.from("pengurus_pth").select("*,prodi(nama)").eq("pth_id",user.pth_id).order("urutan");
+      const {data:peng, error:selErr}=await supabase.from("pengurus_pth").select("*,prodi(nama)").eq("pth_id",user.pth_id).order("jabatan").order("urutan");
       if(selErr) throw new Error("Reload gagal: "+selErr.message);
       setPengurus(peng||[]);
       setPengurusMsg({type:"success",text:"✅ Data pengurus berhasil disimpan!"});
@@ -1855,7 +1857,9 @@ function PageProfilPTH({ user }) {
                   }
                   return (
                 <div key={p.id} className="card" style={{padding:14}}>
-                  <div style={{fontSize:10,color:T.muted,fontWeight:700,marginBottom:4}}>{jabatanLabel}</div>
+                  <div style={{fontSize:10,color:T.muted,fontWeight:700,marginBottom:4}}>
+                    {jabatanLabel}{p.jabatan==="wakil_ketua"&&p.bidang?` — ${p.bidang}`:""}
+                  </div>
                   <div style={{fontWeight:800,color:T.navy,fontSize:14}}>{p.nama}</div>
                 </div>
                   );
