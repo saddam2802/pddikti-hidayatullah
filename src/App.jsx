@@ -592,6 +592,7 @@ function PublicDashboard() {
   const [loading,setLoading]=useState(true);
   const [activePage,setActivePage]=useState("dashboard");
   const [selectedPTH,setSelectedPTH]=useState(null); const [selectedProdi,setSelectedProdi]=useState(null);
+  const [pthPengurus,setPthPengurus]=useState({}); // cache: pth_id → pengurus[]
   const [filterMode,setFilterMode]=useState("berjalan"); // berjalan | tahun | kumulatif
   const [filterTA,setFilterTA]=useState(""); // dipilih kalau mode=tahun
   const {isMobile}=useBreakpoint();
@@ -926,6 +927,27 @@ function PublicDashboard() {
                 </div>
               ))}
             </div>
+
+            {/* Pengurus PTH */}
+            {(pthPengurus[selectedPTH.id]||[]).length>0&&(
+              <div style={{marginTop:16}}>
+                <h3 style={{fontWeight:800,color:T.navy,marginBottom:12,fontSize:15}}>👥 Pengurus PTH</h3>
+                <div className="pth-grid" style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10}}>
+                  {[
+                    ...(pthPengurus[selectedPTH.id]||[]).filter(p=>p.jabatan==="ketua"),
+                    ...(pthPengurus[selectedPTH.id]||[]).filter(p=>p.jabatan==="wakil_ketua"),
+                    ...(pthPengurus[selectedPTH.id]||[]).filter(p=>p.jabatan==="kaprodi"),
+                  ].map(p=>(
+                    <div key={p.id} className="card" style={{padding:14}}>
+                      <div style={{fontSize:10,color:T.muted,fontWeight:700,marginBottom:4}}>
+                        {p.jabatan==="ketua"?"👑 Ketua/Rektor":p.jabatan==="wakil_ketua"?"🏅 Wakil Ketua/Rektor":`📚 Kaprodi ${p.prodi?.nama||""}`}
+                      </div>
+                      <div style={{fontWeight:800,color:T.navy,fontSize:13}}>{p.nama}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         ):(
           <div className="fade-up">
@@ -933,7 +955,13 @@ function PublicDashboard() {
             <div className="pth-grid" style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:12}}>
               {pthList.map(p=>(
                 <div key={p.id} className="card" style={{padding:18,cursor:"pointer",transition:"all 0.15s"}}
-                  onClick={()=>setSelectedPTH(p)}
+                  onClick={()=>{
+                  setSelectedPTH(p);
+                  if(!pthPengurus[p.id]){
+                    supabase.from("pengurus_pth").select("*,prodi(nama)").eq("pth_id",p.id).order("jabatan")
+                      .then(({data})=>setPthPengurus(prev=>({...prev,[p.id]:data||[]})));
+                  }
+                }}
                   onMouseEnter={e=>{e.currentTarget.style.borderColor=T.blue;e.currentTarget.style.transform="translateY(-2px)";}}
                   onMouseLeave={e=>{e.currentTarget.style.borderColor=T.border;e.currentTarget.style.transform="none";}}>
                   <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
@@ -1569,20 +1597,44 @@ function PageProfilPTH({ user }) {
   },[user.pth_id]);
 
   const initPengurusForm = (prodiList) => {
-    // Buat form default: ketua, wakil_ketua, + 1 kaprodi per prodi
+    // Ketua
+    const ketuaExist = pengurus.find(pg=>pg.jabatan==="ketua");
     const rows = [
-      {jabatan:"ketua", label:"Ketua/Rektor", prodi_id:null, nama:""},
-      {jabatan:"wakil_ketua", label:"Wakil Ketua/Rektor", prodi_id:null, nama:""},
-      ...prodiList.map(p=>({jabatan:"kaprodi", label:`Kaprodi ${p.nama}`, prodi_id:p.id, nama:""})),
+      {jabatan:"ketua", label:"Ketua/Rektor", prodi_id:null, id:ketuaExist?.id||null, nama:ketuaExist?.nama||""},
     ];
-    // Isi dengan data yang sudah ada
-    return rows.map(r=>{
-      const existing = pengurus.find(pg=>
-        pg.jabatan===r.jabatan &&
-        (r.prodi_id ? pg.prodi_id===r.prodi_id : !pg.prodi_id)
-      );
-      return {...r, id:existing?.id||null, nama:existing?.nama||""};
+    // Wakil Ketua — ambil semua yang ada, minimal 1 slot kosong
+    const wakilExist = pengurus.filter(pg=>pg.jabatan==="wakil_ketua");
+    if(wakilExist.length===0){
+      rows.push({jabatan:"wakil_ketua", label:"Wakil Ketua/Rektor 1", prodi_id:null, id:null, nama:""});
+    } else {
+      wakilExist.forEach((wk,i)=>rows.push({jabatan:"wakil_ketua", label:`Wakil Ketua/Rektor ${i+1}`, prodi_id:null, id:wk.id, nama:wk.nama}));
+    }
+    // Kaprodi per prodi
+    prodiList.forEach(p=>{
+      const kp = pengurus.find(pg=>pg.jabatan==="kaprodi"&&pg.prodi_id===p.id);
+      rows.push({jabatan:"kaprodi", label:`Kaprodi ${p.nama}`, prodi_id:p.id, id:kp?.id||null, nama:kp?.nama||""});
     });
+    return rows;
+  };
+
+  const tambahWakil = () => {
+    const jumlahWakil = pengurusForm.filter(r=>r.jabatan==="wakil_ketua").length;
+    if(jumlahWakil>=10) return;
+    // Sisipkan setelah wakil terakhir
+    const lastWakilIdx = pengurusForm.map(r=>r.jabatan).lastIndexOf("wakil_ketua");
+    const newForm = [...pengurusForm];
+    newForm.splice(lastWakilIdx+1, 0, {jabatan:"wakil_ketua", label:`Wakil Ketua/Rektor ${jumlahWakil+1}`, prodi_id:null, id:null, nama:""});
+    // Re-label semua wakil
+    let wIdx=1;
+    newForm.forEach(r=>{ if(r.jabatan==="wakil_ketua") r.label=`Wakil Ketua/Rektor ${wIdx++}`; });
+    setPengurusForm(newForm);
+  };
+
+  const hapusWakil = (i) => {
+    const newForm = pengurusForm.filter((_,idx)=>idx!==i);
+    let wIdx=1;
+    newForm.forEach(r=>{ if(r.jabatan==="wakil_ketua") r.label=`Wakil Ketua/Rektor ${wIdx++}`; });
+    setPengurusForm(newForm);
   };
 
   const bukaEditPengurus = () => {
@@ -1722,10 +1774,21 @@ function PageProfilPTH({ user }) {
         <div className="card" style={{padding:20}}>
           {pengurusForm.map((r,i)=>(
             <div key={i} style={{marginBottom:12}}>
-              <div style={{fontSize:11,color:T.muted,fontWeight:700,marginBottom:4}}>{r.label}</div>
+              <div style={{fontSize:11,color:T.muted,fontWeight:700,marginBottom:4,display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+                <span>{r.label}</span>
+                {r.jabatan==="wakil_ketua"&&pengurusForm.filter(x=>x.jabatan==="wakil_ketua").length>1&&(
+                  <button onClick={()=>hapusWakil(i)} style={{background:"none",border:"none",color:T.red,cursor:"pointer",fontSize:16,padding:"0 4px",lineHeight:1}}>✕</button>
+                )}
+              </div>
               <input value={r.nama} onChange={e=>{const nf=[...pengurusForm];nf[i]={...nf[i],nama:e.target.value};setPengurusForm(nf);}}
                 placeholder={`Nama ${r.label}`}
                 style={{width:"100%",padding:"8px 12px",borderRadius:8,border:`1.5px solid ${T.border}`,fontSize:13,boxSizing:"border-box"}}/>
+              {/* Tombol tambah wakil — muncul setelah input wakil terakhir */}
+              {r.jabatan==="wakil_ketua"&&i===pengurusForm.map(x=>x.jabatan).lastIndexOf("wakil_ketua")&&pengurusForm.filter(x=>x.jabatan==="wakil_ketua").length<10&&(
+                <button onClick={tambahWakil} style={{marginTop:6,background:"none",border:`1.5px dashed ${T.blue}`,borderRadius:7,color:T.blue,fontSize:11,fontWeight:700,padding:"5px 12px",cursor:"pointer",width:"100%"}}>
+                  + Tambah Wakil Ketua/Rektor
+                </button>
+              )}
             </div>
           ))}
           <button onClick={simpanPengurus} disabled={savingPengurus} className="btn btn-primary" style={{width:"100%",marginTop:4}}>
