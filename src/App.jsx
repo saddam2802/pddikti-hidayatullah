@@ -1822,8 +1822,42 @@ function AdminPanel({ user, onLogout }) {
 export default function App() {
   const [showLogin,setShowLogin]=useState(false);
   const [user,setUser]=useState(null);
-  const [checking,setChecking]=useState(false);
+  const [checking,setChecking]=useState(true); // true dulu = cek sesi dulu
   const [needProfil,setNeedProfil]=useState(false);
+
+  // Fungsi restore user dari session Supabase
+  const restoreUser = async (sessionUser) => {
+    if(!sessionUser) { setChecking(false); return; }
+    const {data:rd}=await supabase.from("user_roles").select("*,pth(*)").eq("user_id",sessionUser.id).single();
+    if(!rd) { setChecking(false); return; }
+    const u = {
+      id: sessionUser.id,
+      email: sessionUser.email,
+      role: rd.role,
+      nama: rd.nama,
+      pth_id: rd.pth_id,
+      pth: rd.pth,
+    };
+    setUser(u);
+    if(u.role==="pth"){
+      const {data}=await supabase.from("pth").select("profil_lengkap").eq("id",u.pth_id).single();
+      setNeedProfil(!data?.profil_lengkap);
+    }
+    setChecking(false);
+  };
+
+  // Cek sesi saat pertama load + dengerin perubahan auth
+  useEffect(()=>{
+    // Cek sesi yang sudah ada (setelah refresh)
+    supabase.auth.getSession().then(({data:{session}})=>{
+      restoreUser(session?.user || null);
+    });
+    // Dengerin perubahan login/logout
+    const {data:{subscription}}=supabase.auth.onAuthStateChange((_event,session)=>{
+      if(!session) { setUser(null); setNeedProfil(false); setChecking(false); }
+    });
+    return ()=>subscription.unsubscribe();
+  },[]);
 
   const handleLogin=async u=>{
     setShowLogin(false); setUser(u);
