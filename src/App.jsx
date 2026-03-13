@@ -1240,8 +1240,9 @@ function PageUpload({ user, onDone }) {
             };
             const NF=(k,label)=>(
               <div style={{marginBottom:10}}>
-                <label style={{fontSize:11}}>{label}</label>
-                <input type="number" min="0" value={mpData[k]||""} onChange={e=>setMpField(k,e.target.value)} style={{padding:"8px 12px",fontSize:13}}/>
+                <label style={{fontSize:11,fontWeight:700,color:T.muted,display:"block",marginBottom:4}}>{label}</label>
+                <input type="number" min="0" value={mpData[k]||""} onChange={e=>setMpField(k,e.target.value)}
+                  style={{padding:"8px 12px",fontSize:13,width:"100%",boxSizing:"border-box",borderRadius:8,border:`1.5px solid ${T.border}`}}/>
               </div>
             );
             return (
@@ -1254,17 +1255,28 @@ function PageUpload({ user, onDone }) {
                   {NF("student_body","Student Body")}{NF("prestasi_dn","Prestasi DN")}{NF("prestasi_int","Prestasi Intl")}
                 </div>
                 <div style={{fontSize:11,fontWeight:800,color:T.teal,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.05em",marginTop:12}}>Dosen</div>
-                <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:"0 12px"}} className="two-col">
+                {/* S2 & S3 */}
+                <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:"0 12px",marginBottom:4}}>
                   {NF("dosen_s2","S2")}{NF("dosen_s3","S3")}
-                  {NF("tanpa_jad_kader","Tanpa JAD Kader")}{NF("tanpa_jad_non","Tanpa JAD Non")}
-                  {NF("asisten_ahli_kader","Asisten Ahli Kader")}{NF("asisten_ahli_non","Asisten Ahli Non")}
-                  {NF("lektor_kader","Lektor Kader")}{NF("lektor_non","Lektor Non")}
-                  {NF("lk_kader","Lektor Kepala Kader")}{NF("lk_non","Lektor Kepala Non")}
-                  {NF("gb_kader","Guru Besar Kader")}{NF("gb_non","Guru Besar Non")}
                 </div>
+                {/* Jabatan fungsional — per baris: label jabatan, kolom Kader & Non-Kader */}
+                {[
+                  ["Tanpa JAD","tanpa_jad_kader","tanpa_jad_non"],
+                  ["Asisten Ahli","asisten_ahli_kader","asisten_ahli_non"],
+                  ["Lektor","lektor_kader","lektor_non"],
+                  ["Lektor Kepala","lk_kader","lk_non"],
+                  ["Guru Besar","gb_kader","gb_non"],
+                ].map(([judul,kKader,kNon])=>(
+                  <div key={judul} style={{marginBottom:8}}>
+                    <div style={{fontSize:10,color:T.muted,fontWeight:800,marginBottom:4}}>{judul}</div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 12px"}}>
+                      {NF(kKader,"Kader")}{NF(kNon,"Non-Kader")}
+                    </div>
+                  </div>
+                ))}
                 <div style={{fontSize:11,fontWeight:800,color:T.orange,marginBottom:8,textTransform:"uppercase",letterSpacing:"0.05em",marginTop:12}}>Tendik</div>
                 <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:"0 12px"}} className="two-col">
-                  {NF("tendik_kader","Tendik Kader")}{NF("tendik_non","Tendik Non")}
+                  {NF("tendik_kader","Tendik Kader")}{NF("tendik_non","Tendik Non-Kader")}
                 </div>
               </div>
             );
@@ -1969,7 +1981,7 @@ function PageRekap({ pthList }) {
         ...mhs.map(r=>[r.pth?.nama||"",r.prodi?.nama||"",r.semester,r.tahun_akademik,r.total_mhs_aktif||0,r.mhs_aktif_kader||0,r.mhs_aktif_non_kader||0,r.total_mhs_baru||0,r.mhs_baru_kader||0,r.student_body||0,r.prestasi_dalam_negeri||0,r.prestasi_internasional||0])
       ]),"Mahasiswa");
       XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
-        ["PTH","Prodi","Semester","TA","S2","S3","TJ Kader","TJ Non","AA Kader","AA Non","Lektor Kdr","Lektor Non","LK Kdr","LK Non","GB Kdr","GB Non"],
+        ["PTH","Prodi","Semester","TA","S2","S3","TJ Kader","TJ Non","AA Kader","AA Non","Lektor Kdr","Lektor Non-Kader","LK Kdr","LK Non","GB Kdr","GB Non"],
         ...dosen.map(r=>[r.pth?.nama||"",r.prodi?.nama||"",r.semester,r.tahun_akademik,r.dosen_s2||0,r.dosen_s3||0,r.tanpa_jad_kader||0,r.tanpa_jad_non_kader||0,r.asisten_ahli_kader||0,r.asisten_ahli_non_kader||0,r.lektor_kader||0,r.lektor_non_kader||0,r.lektor_kepala_kader||0,r.lektor_kepala_non_kader||0,r.guru_besar_kader||0,r.guru_besar_non_kader||0])
       ]),"Dosen");
       XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([
