@@ -1094,6 +1094,10 @@ function PageUpload({ user, onDone }) {
     try {
       const {data:up,error:ue}=await supabase.from("uploads").insert({pth_id:user.pth_id,semester:parsed.identitas.semester,tahun_akademik:parsed.identitas.tahun_akademik,filename:file.name,status:"pending",uploaded_by:user.id}).select().single();
       if(ue) throw ue.message;
+      // Simpan file Excel ke Supabase Storage
+      const filePath=`excel/${up.id}_${file.name}`;
+      await supabase.storage.from("uploads").upload(filePath, file, {contentType:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",upsert:true});
+      await supabase.from("uploads").update({file_path:filePath}).eq("id",up.id);
       for(const pi of parsed.daftarProdi){
         let {data:pd}=await supabase.from("prodi").select("id").eq("pth_id",user.pth_id).eq("nama",pi.nama).single();
         if(!pd){const {data:np}=await supabase.from("prodi").insert({pth_id:user.pth_id,nama:pi.nama,jenjang:pi.jenjang,akreditasi:pi.akreditasi}).select().single();pd=np;}
@@ -1565,11 +1569,176 @@ function PageHistory({ uploads, loading, isSuperAdmin, user, onRefresh }) {
 /* ── PAGE APPROVAL ── */
 function PageApproval({ uploads, onRefresh }) {
   const [loading,setLoading]=useState(false);
+  const [previewing,setPreviewing]=useState(null); // upload id yang sedang dipreview
+  const [previewData,setPreviewData]=useState(null); // parsed excel data
+  const [previewLoading,setPreviewLoading]=useState(false);
+  const [previewErr,setPreviewErr]=useState("");
+
   const act=async(id,status)=>{
     setLoading(true);
     await supabase.from("uploads").update({status,reviewed_at:new Date().toISOString()}).eq("id",id);
+    setPreviewing(null); setPreviewData(null);
     onRefresh(); setLoading(false);
   };
+
+  const openPreview=async(u)=>{
+    setPreviewing(u.id); setPreviewData(null); setPreviewErr(""); setPreviewLoading(true);
+    try {
+      if(!u.file_path) { setPreviewErr("File Excel tidak tersedia — upload ini dilakukan sebelum fitur penyimpanan file ditambahkan."); setPreviewLoading(false); return; }
+      const {data,error}=await supabase.storage.from("uploads").download(u.file_path);
+      if(error) throw error.message;
+      const buf=await data.arrayBuffer();
+      const parsed=await parseExcel(new File([buf],u.filename||"file.xlsx"));
+      setPreviewData(parsed);
+    } catch(e){ setPreviewErr("Gagal memuat file: "+String(e)); }
+    setPreviewLoading(false);
+  };
+
+  const downloadFile=async(u)=>{
+    if(!u.file_path){alert("File Excel tidak tersedia untuk upload ini.");return;}
+    const {data,error}=await supabase.storage.from("uploads").download(u.file_path);
+    if(error){alert("Gagal download: "+error.message);return;}
+    const url=URL.createObjectURL(data);
+    const a=document.createElement("a"); a.href=url; a.download=u.filename||"data.xlsx";
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
+  // Jika sedang preview, tampilkan halaman preview
+  if(previewing!==null){
+    const u=uploads.find(x=>x.id===previewing);
+    return (
+      <div className="fade-up">
+        <button onClick={()=>{setPreviewing(null);setPreviewData(null);setPreviewErr("");}} className="btn btn-ghost" style={{marginBottom:16}}>← Kembali ke Approval</button>
+        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:12}}>
+          <div>
+            <h2 style={{fontWeight:900,color:T.navy,fontSize:18}}>{u?.pth?.nama}</h2>
+            <p style={{color:T.muted,fontSize:13,marginTop:4}}>Semester {u?.semester} — TA {u?.tahun_akademik} · {u?.filename}</p>
+          </div>
+          <div style={{display:"flex",gap:8,flexShrink:0}}>
+            <button onClick={()=>downloadFile(u)} className="btn-outline" style={{fontSize:12,padding:"8px 14px"}}>⬇️ Download Excel</button>
+            <button onClick={()=>act(u.id,"rejected")} disabled={loading} className="btn btn-red" style={{fontSize:12,padding:"8px 14px"}}>✕ Tolak</button>
+            <button onClick={()=>act(u.id,"approved")} disabled={loading} className="btn btn-green" style={{fontSize:12,padding:"8px 14px"}}>✓ Setuju & Approve</button>
+          </div>
+        </div>
+
+        {previewLoading&&<Spin/>}
+        {previewErr&&<Alert type="error" msg={previewErr}/>}
+
+        {previewData&&(
+          <div className="fade-up">
+            {/* Info Identitas */}
+            <div className="card" style={{padding:18,marginBottom:12}}>
+              <h3 style={{fontWeight:800,color:T.navy,marginBottom:12}}>📋 Identitas</h3>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10}}>
+                {[["PTH",previewData.identitas.nama_pth],["Semester",previewData.identitas.semester],["Tahun Akademik",previewData.identitas.tahun_akademik]].map(([l,v])=>(
+                  <div key={l} style={{background:T.bg,borderRadius:9,padding:"10px 14px"}}>
+                    <div style={{fontSize:10,color:T.muted,fontWeight:700}}>{l}</div>
+                    <div style={{fontWeight:800,color:T.navy,fontSize:13,marginTop:3}}>{v||"-"}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Tabel Mahasiswa per Prodi */}
+            <div className="card" style={{padding:18,marginBottom:12}}>
+              <h3 style={{fontWeight:800,color:T.navy,marginBottom:12}}>🎓 Data Mahasiswa per Prodi</h3>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Prodi</th><th>Aktif Total</th><th>Aktif Kader</th><th>Baru Total</th><th>Baru Kader</th><th>Student Body</th><th>Prestasi DN</th><th>Prestasi Intl</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewData.daftarProdi.map((p,i)=>{
+                      const d=previewData.prodi[p.nama]?.mahasiswa||{};
+                      return (
+                        <tr key={i}>
+                          <td style={{fontWeight:700,color:T.navy,fontSize:12}}>{p.nama}<br/><span style={{fontSize:10,color:T.muted,fontWeight:400}}>{p.jenjang} · Akr. {p.akreditasi||"-"}</span></td>
+                          <td style={{fontFamily:"'DM Mono',monospace",fontWeight:800}}>{d.total_aktif||0}</td>
+                          <td style={{fontFamily:"'DM Mono',monospace"}}>{d.aktif_kader||0}</td>
+                          <td style={{fontFamily:"'DM Mono',monospace",fontWeight:800}}>{d.total_baru||0}</td>
+                          <td style={{fontFamily:"'DM Mono',monospace"}}>{d.baru_kader||0}</td>
+                          <td style={{fontFamily:"'DM Mono',monospace"}}>{d.student_body||0}</td>
+                          <td style={{fontFamily:"'DM Mono',monospace"}}>{d.prestasi_dn||0}</td>
+                          <td style={{fontFamily:"'DM Mono',monospace"}}>{d.prestasi_int||0}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Tabel Dosen per Prodi */}
+            <div className="card" style={{padding:18,marginBottom:12}}>
+              <h3 style={{fontWeight:800,color:T.teal,marginBottom:12}}>👩‍🏫 Data Dosen per Prodi</h3>
+              <div className="table-wrap">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Prodi</th><th>S2</th><th>S3</th><th>Kader Total</th><th>Non-Kader Total</th><th>Guru Besar</th><th>Lektor Kepala</th><th>Lektor</th><th>Asisten Ahli</th><th>Tanpa JAD</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {previewData.daftarProdi.map((p,i)=>{
+                      const d=previewData.prodi[p.nama]?.dosen||{};
+                      const kaderTotal=(d.tanpa_jad_kader||0)+(d.asisten_ahli_kader||0)+(d.lektor_kader||0)+(d.lektor_kepala_kader||0)+(d.guru_besar_kader||0);
+                      const nonKaderTotal=(d.tanpa_jad_non_kader||0)+(d.asisten_ahli_non_kader||0)+(d.lektor_non_kader||0)+(d.lektor_kepala_non_kader||0)+(d.guru_besar_non_kader||0);
+                      return (
+                        <tr key={i}>
+                          <td style={{fontWeight:700,color:T.navy,fontSize:12}}>{p.nama}</td>
+                          <td style={{fontFamily:"'DM Mono',monospace"}}>{d.s2||0}</td>
+                          <td style={{fontFamily:"'DM Mono',monospace"}}>{d.s3||0}</td>
+                          <td style={{fontFamily:"'DM Mono',monospace",color:T.green,fontWeight:800}}>{kaderTotal}</td>
+                          <td style={{fontFamily:"'DM Mono',monospace",color:T.muted}}>{nonKaderTotal}</td>
+                          <td style={{fontFamily:"'DM Mono',monospace"}}>{(d.guru_besar_kader||0)+(d.guru_besar_non_kader||0)}</td>
+                          <td style={{fontFamily:"'DM Mono',monospace"}}>{(d.lektor_kepala_kader||0)+(d.lektor_kepala_non_kader||0)}</td>
+                          <td style={{fontFamily:"'DM Mono',monospace"}}>{(d.lektor_kader||0)+(d.lektor_non_kader||0)}</td>
+                          <td style={{fontFamily:"'DM Mono',monospace"}}>{(d.asisten_ahli_kader||0)+(d.asisten_ahli_non_kader||0)}</td>
+                          <td style={{fontFamily:"'DM Mono',monospace"}}>{(d.tanpa_jad_kader||0)+(d.tanpa_jad_non_kader||0)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Penelitian & Kerjasama level PTH */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:12}} className="two-col">
+              <div className="card" style={{padding:18}}>
+                <h3 style={{fontWeight:800,color:T.blue,marginBottom:12}}>🔬 Penelitian & PkM</h3>
+                {[["Sinta Score",previewData.pth.sinta_score||0],["GScholar Artikel",previewData.pth.gscholar_artikel||0],["GScholar Sitasi",previewData.pth.gscholar_citation||0],["Scopus Artikel",previewData.pth.scopus_artikel||0],["Scopus Sitasi",previewData.pth.scopus_citation||0],["Hibah Pemerintah",previewData.pth.hibah_pemerintah||0],["Hibah Eksternal",previewData.pth.hibah_eksternal||0]].map(([l,v])=>(
+                  <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #dde6ef",fontSize:13}}>
+                    <span style={{color:T.muted,fontWeight:600}}>{l}</span>
+                    <span style={{fontFamily:"'DM Mono',monospace",fontWeight:800,color:T.navy}}>{v}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="card" style={{padding:18}}>
+                <h3 style={{fontWeight:800,color:T.green,marginBottom:12}}>🤝 Kerjasama & Alumni</h3>
+                {[["Kerjasama DN",previewData.pth.kerjasama_dn||0],["Kerjasama LN",previewData.pth.kerjasama_ln||0],["Alumni Kader",previewData.pth.alumni_kader||0],["Alumni Non-Kader",previewData.pth.alumni_non_kader||0]].map(([l,v])=>(
+                  <div key={l} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:"1px solid #dde6ef",fontSize:13}}>
+                    <span style={{color:T.muted,fontWeight:600}}>{l}</span>
+                    <span style={{fontFamily:"'DM Mono',monospace",fontWeight:800,color:T.navy}}>{v}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Tombol Approve/Reject di bawah juga */}
+            <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8}}>
+              <button onClick={()=>act(u.id,"rejected")} disabled={loading} className="btn btn-red">✕ Tolak</button>
+              <button onClick={()=>act(u.id,"approved")} disabled={loading} className="btn btn-green">✓ Setuju & Approve</button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
   return (
     <div>
       <SectionTitle title="✅ Approval Data" sub={`${uploads.length} data menunggu persetujuan`}/>
@@ -1586,7 +1755,9 @@ function PageApproval({ uploads, onRefresh }) {
               <div style={{fontSize:12,color:T.muted}}>Semester {u.semester} — TA {u.tahun_akademik}</div>
               <div style={{fontSize:11,color:T.muted,marginTop:2}}>{u.filename} · {new Date(u.created_at).toLocaleDateString("id-ID")}</div>
             </div>
-            <div style={{display:"flex",gap:8,flexShrink:0}}>
+            <div style={{display:"flex",gap:8,flexShrink:0,flexWrap:"wrap",justifyContent:"flex-end"}}>
+              <button onClick={()=>openPreview(u)} className="btn-outline" style={{fontSize:12,padding:"8px 14px"}}>🔍 Preview</button>
+              <button onClick={()=>downloadFile(u)} className="btn-outline" style={{fontSize:12,padding:"8px 14px"}}>⬇️ Download</button>
               <button onClick={()=>act(u.id,"approved")} disabled={loading} className="btn btn-green" style={{fontSize:12,padding:"8px 14px"}}>✓ Setuju</button>
               <button onClick={()=>act(u.id,"rejected")} disabled={loading} className="btn btn-red" style={{fontSize:12,padding:"8px 14px"}}>✕ Tolak</button>
             </div>
