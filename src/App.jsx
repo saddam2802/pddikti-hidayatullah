@@ -270,17 +270,21 @@ function LoginModal({ onLogin, onClose }) {
 }
 
 /* ── FORM PROFIL PTH ── */
-function FormProfilPTH({ user, onDone }) {
+function FormProfilPTH({ user, onDone, onLogout }) {
   const [form,setForm]=useState({nama_sk:"",badan_penyelenggara:"",struktur:"",akreditasi:"",kota:"",provinsi:"",website:"",telp:""});
   const [saving,setSaving]=useState(false); const [err,setErr]=useState("");
   const save = async () => {
     if(!form.nama_sk||!form.kota) return setErr("Nama SK dan Kota wajib diisi.");
     setSaving(true);
     const {error}=await supabase.from("pth").update({...form,profil_lengkap:true,updated_at:new Date().toISOString()}).eq("id",user.pth_id);
-    if(error){setErr(error.message);setSaving(false);return;} onDone();
+    if(error){setErr("Gagal menyimpan: "+error.message+". Pastikan koneksi internet stabil dan coba lagi.");setSaving(false);return;} onDone();
   };
   return (
     <div style={{minHeight:"100vh",background:T.bg,display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      {/* Tombol logout di pojok kanan atas */}
+      <div style={{position:"fixed",top:16,right:16,zIndex:100}}>
+        <button onClick={onLogout} style={{background:T.navy,color:"#fff",border:"none",borderRadius:8,padding:"8px 16px",fontWeight:700,fontSize:12,cursor:"pointer",boxShadow:"0 2px 8px #00000033"}}>🚪 Logout</button>
+      </div>
       <div className="card fade-up" style={{width:"100%",maxWidth:560,padding:32}}>
         <div style={{textAlign:"center",marginBottom:24}}>
           <div style={{width:52,height:52,background:T.accent,borderRadius:14,display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,color:T.navy,fontSize:20,margin:"0 auto 12px"}}>🏛️</div>
@@ -2320,7 +2324,8 @@ export default function App() {
     setUser(u);
     if(u.role==="pth"){
       const {data}=await supabase.from("pth").select("profil_lengkap").eq("id",u.pth_id).single();
-      setNeedProfil(!data?.profil_lengkap);
+      // Jika query gagal (null karena RLS), anggap profil sudah lengkap agar tidak loop
+      setNeedProfil(data ? !data.profil_lengkap : false);
     }
     setChecking(false);
   };
@@ -2343,13 +2348,14 @@ export default function App() {
     if(u.role==="pth"){
       setChecking(true);
       const {data}=await supabase.from("pth").select("profil_lengkap").eq("id",u.pth_id).single();
-      setNeedProfil(!data?.profil_lengkap); setChecking(false);
+      // Jika query gagal (null karena RLS), anggap profil sudah lengkap agar tidak loop
+      setNeedProfil(data ? !data.profil_lengkap : false); setChecking(false);
     }
   };
   const handleLogout=async()=>{await supabase.auth.signOut();setUser(null);setNeedProfil(false);};
 
   if(checking) return <div style={{height:"100vh",display:"flex",alignItems:"center",justifyContent:"center"}}><Spin/></div>;
-  if(user&&needProfil) return <FormProfilPTH user={user} onDone={()=>setNeedProfil(false)}/>;
+  if(user&&needProfil) return <FormProfilPTH user={user} onDone={()=>setNeedProfil(false)} onLogout={handleLogout}/>;
 
   return (
     <>
