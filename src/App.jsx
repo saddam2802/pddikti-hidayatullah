@@ -2615,6 +2615,7 @@ function AdminPanel({ user, onLogout }) {
         {page==="rekap"&&isSuperAdmin&&<PageRekap pthList={pthList}/>}
         {page==="datapth"&&isSuperAdmin&&<PageDataPTH pthList={pthList} onRefreshPTH={loadPTH}/>}
         {page==="profil"&&!isSuperAdmin&&<PageProfilPTH user={user}/>}
+        {page==="profil"&&isSuperAdmin&&<PageDataPTH pthList={pthList} onRefreshPTH={loadPTH}/>}
         {page==="users"&&isSuperAdmin&&<PageUsers/>}
       </main>
     </div>
