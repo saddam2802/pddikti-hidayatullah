@@ -1092,24 +1092,31 @@ function PageUpload({ user, onDone }) {
   const doSubmitExcel = async () => {
     setLoading(true); setErr("");
     try {
-      const {data:up,error:ue}=await supabase.from("uploads").insert({pth_id:user.pth_id,semester:parsed.identitas.semester,tahun_akademik:parsed.identitas.tahun_akademik,filename:file.name,status:"pending",uploaded_by:user.id}).select().single();
+      const {data:up,error:ue}=await supabase.from("uploads").insert({pth_id:user.pth_id,semester:parsed.identitas.semester,tahun_akademik:parsed.identitas.tahun_akademik,filename:file.name,status:"pending",uploaded_by:user.id}).select().maybeSingle();
       if(ue) throw ue.message;
+      // Kalau up null karena RLS, ambil upload terbaru milik PTH ini
+      let uploadId = up?.id;
+      if(!uploadId){
+        const {data:latest}=await supabase.from("uploads").select("id").eq("pth_id",user.pth_id).eq("status","pending").order("created_at",{ascending:false}).limit(1).maybeSingle();
+        uploadId = latest?.id;
+      }
+      if(!uploadId) throw "Gagal mendapatkan ID upload. Coba lagi.";
       // Simpan file Excel ke Supabase Storage
-      const filePath=`excel/${up.id}_${file.name}`;
+      const filePath=`excel/${uploadId}_${file.name}`;
       await supabase.storage.from("uploads").upload(filePath, file, {contentType:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",upsert:true});
-      await supabase.from("uploads").update({file_path:filePath}).eq("id",up.id);
+      await supabase.from("uploads").update({file_path:filePath}).eq("id",uploadId);
       for(const pi of parsed.daftarProdi){
         let {data:pd}=await supabase.from("prodi").select("id").eq("pth_id",user.pth_id).eq("nama",pi.nama).single();
         if(!pd){const {data:np}=await supabase.from("prodi").insert({pth_id:user.pth_id,nama:pi.nama,jenjang:pi.jenjang,akreditasi:pi.akreditasi}).select().single();pd=np;}
         else{await supabase.from("prodi").update({jenjang:pi.jenjang,akreditasi:pi.akreditasi}).eq("id",pd.id);}
         const d=parsed.prodi[pi.nama]; if(!d) continue;
-        await supabase.from("data_dosen").insert({upload_id:up.id,pth_id:user.pth_id,prodi_id:pd.id,semester:parsed.identitas.semester,tahun_akademik:parsed.identitas.tahun_akademik,dosen_s2:d.dosen.s2||0,dosen_s3:d.dosen.s3||0,tanpa_jad_kader:d.dosen.tanpa_jad_kader||0,tanpa_jad_non_kader:d.dosen.tanpa_jad_non_kader||0,asisten_ahli_kader:d.dosen.asisten_ahli_kader||0,asisten_ahli_non_kader:d.dosen.asisten_ahli_non_kader||0,lektor_kader:d.dosen.lektor_kader||0,lektor_non_kader:d.dosen.lektor_non_kader||0,lektor_kepala_kader:d.dosen.lektor_kepala_kader||0,lektor_kepala_non_kader:d.dosen.lektor_kepala_non_kader||0,guru_besar_kader:d.dosen.guru_besar_kader||0,guru_besar_non_kader:d.dosen.guru_besar_non_kader||0});
-        await supabase.from("data_tendik").insert({upload_id:up.id,pth_id:user.pth_id,prodi_id:pd.id,semester:parsed.identitas.semester,tahun_akademik:parsed.identitas.tahun_akademik,tendik_kader:d.tendik.kader||0,tendik_non_kader:d.tendik.non_kader||0});
-        await supabase.from("data_mahasiswa").insert({upload_id:up.id,pth_id:user.pth_id,prodi_id:pd.id,semester:parsed.identitas.semester,tahun_akademik:parsed.identitas.tahun_akademik,student_body:d.mahasiswa.student_body||0,mhs_baru_kader:d.mahasiswa.baru_kader||0,mhs_baru_non_kader:d.mahasiswa.baru_non_kader||0,total_mhs_baru:d.mahasiswa.total_baru||0,mhs_aktif_kader:d.mahasiswa.aktif_kader||0,mhs_aktif_non_kader:d.mahasiswa.aktif_non_kader||0,total_mhs_aktif:d.mahasiswa.total_aktif||0,prestasi_dalam_negeri:d.mahasiswa.prestasi_dn||0,prestasi_internasional:d.mahasiswa.prestasi_int||0});
+        await supabase.from("data_dosen").insert({upload_id:uploadId,pth_id:user.pth_id,prodi_id:pd.id,semester:parsed.identitas.semester,tahun_akademik:parsed.identitas.tahun_akademik,dosen_s2:d.dosen.s2||0,dosen_s3:d.dosen.s3||0,tanpa_jad_kader:d.dosen.tanpa_jad_kader||0,tanpa_jad_non_kader:d.dosen.tanpa_jad_non_kader||0,asisten_ahli_kader:d.dosen.asisten_ahli_kader||0,asisten_ahli_non_kader:d.dosen.asisten_ahli_non_kader||0,lektor_kader:d.dosen.lektor_kader||0,lektor_non_kader:d.dosen.lektor_non_kader||0,lektor_kepala_kader:d.dosen.lektor_kepala_kader||0,lektor_kepala_non_kader:d.dosen.lektor_kepala_non_kader||0,guru_besar_kader:d.dosen.guru_besar_kader||0,guru_besar_non_kader:d.dosen.guru_besar_non_kader||0});
+        await supabase.from("data_tendik").insert({upload_id:uploadId,pth_id:user.pth_id,prodi_id:pd.id,semester:parsed.identitas.semester,tahun_akademik:parsed.identitas.tahun_akademik,tendik_kader:d.tendik.kader||0,tendik_non_kader:d.tendik.non_kader||0});
+        await supabase.from("data_mahasiswa").insert({upload_id:uploadId,pth_id:user.pth_id,prodi_id:pd.id,semester:parsed.identitas.semester,tahun_akademik:parsed.identitas.tahun_akademik,student_body:d.mahasiswa.student_body||0,mhs_baru_kader:d.mahasiswa.baru_kader||0,mhs_baru_non_kader:d.mahasiswa.baru_non_kader||0,total_mhs_baru:d.mahasiswa.total_baru||0,mhs_aktif_kader:d.mahasiswa.aktif_kader||0,mhs_aktif_non_kader:d.mahasiswa.aktif_non_kader||0,total_mhs_aktif:d.mahasiswa.total_aktif||0,prestasi_dalam_negeri:d.mahasiswa.prestasi_dn||0,prestasi_internasional:d.mahasiswa.prestasi_int||0});
       }
       const p=parsed.pth;
-      await supabase.from("data_penelitian").insert({upload_id:up.id,pth_id:user.pth_id,semester:parsed.identitas.semester,tahun_akademik:parsed.identitas.tahun_akademik,jumlah_jurnal:p.jumlah_jurnal||0,akreditasi_jurnal:p.akreditasi_jurnal||"",sinta_score:p.sinta_score||0,gscholar_artikel:p.gscholar_artikel||0,gscholar_citation:p.gscholar_citation||0,scopus_artikel:p.scopus_artikel||0,scopus_citation:p.scopus_citation||0,hibah_pemerintah:p.hibah_pemerintah||0,hibah_eksternal:p.hibah_eksternal||0});
-      await supabase.from("data_kerjasama").insert({upload_id:up.id,pth_id:user.pth_id,semester:parsed.identitas.semester,tahun_akademik:parsed.identitas.tahun_akademik,kerjasama_ln:p.kerjasama_ln||0,kerjasama_dn:p.kerjasama_dn||0,alumni_kader:p.alumni_kader||0,alumni_non_kader:p.alumni_non_kader||0,nama_ketua_alumni:p.nama_ketua_alumni||"",hp_ketua_alumni:p.hp_ketua_alumni||""});
+      await supabase.from("data_penelitian").insert({upload_id:uploadId,pth_id:user.pth_id,semester:parsed.identitas.semester,tahun_akademik:parsed.identitas.tahun_akademik,jumlah_jurnal:p.jumlah_jurnal||0,akreditasi_jurnal:p.akreditasi_jurnal||"",sinta_score:p.sinta_score||0,gscholar_artikel:p.gscholar_artikel||0,gscholar_citation:p.gscholar_citation||0,scopus_artikel:p.scopus_artikel||0,scopus_citation:p.scopus_citation||0,hibah_pemerintah:p.hibah_pemerintah||0,hibah_eksternal:p.hibah_eksternal||0});
+      await supabase.from("data_kerjasama").insert({upload_id:uploadId,pth_id:user.pth_id,semester:parsed.identitas.semester,tahun_akademik:parsed.identitas.tahun_akademik,kerjasama_ln:p.kerjasama_ln||0,kerjasama_dn:p.kerjasama_dn||0,alumni_kader:p.alumni_kader||0,alumni_non_kader:p.alumni_non_kader||0,nama_ketua_alumni:p.nama_ketua_alumni||"",hp_ketua_alumni:p.hp_ketua_alumni||""});
       setStep(4); onDone();
     } catch(e){setErr("Gagal: "+String(e));}
     setLoading(false);
