@@ -1789,6 +1789,11 @@ function PageProfilPTH({ user }) {
   const [pengurusForm,setPengurusForm]=useState([]);
   const [savingPengurus,setSavingPengurus]=useState(false);
   const [pengurusMsg,setPengurusMsg]=useState({type:"",text:""});
+  const [editProdi,setEditProdi]=useState(null); // prodi id yang sedang diedit
+  const [prodiForm,setProdiForm]=useState({nama:"",jenjang:"",akreditasi:"",status:""});
+  const [prodiMsg,setProdiMsg]=useState({type:"",text:""});
+  const [savingProdi,setSavingProdi]=useState(false);
+  const [confirmHapus,setConfirmHapus]=useState(null); // prodi id yang mau dihapus
 
   useEffect(()=>{
     Promise.all([
@@ -1955,17 +1960,90 @@ function PageProfilPTH({ user }) {
           </div>
         )}
       </div>
-      <h3 style={{fontWeight:800,color:T.navy,marginBottom:12}}>Program Studi ({prodi.length})</h3>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+        <h3 style={{fontWeight:800,color:T.navy}}>Program Studi ({prodi.length})</h3>
+      </div>
+      {prodiMsg.text&&<Alert type={prodiMsg.type} msg={prodiMsg.text}/>}
+      {confirmHapus&&(
+        <div style={{background:T.redL,border:`1.5px solid ${T.red}33`,borderRadius:12,padding:"14px 18px",marginBottom:14}}>
+          <div style={{fontWeight:700,color:T.red,marginBottom:10}}>⚠️ Hapus prodi "{prodi.find(p=>p.id===confirmHapus)?.nama}"? Semua data mahasiswa & dosen prodi ini ikut terhapus!</div>
+          <div style={{display:"flex",gap:8}}>
+            <button onClick={()=>setConfirmHapus(null)} className="btn btn-ghost" style={{fontSize:12}}>Batal</button>
+            <button onClick={async()=>{
+              setSavingProdi(true);
+              await supabase.from("data_mahasiswa").delete().eq("prodi_id",confirmHapus);
+              await supabase.from("data_dosen").delete().eq("prodi_id",confirmHapus);
+              await supabase.from("data_tendik").delete().eq("prodi_id",confirmHapus);
+              await supabase.from("pengurus_pth").delete().eq("prodi_id",confirmHapus);
+              const {error}=await supabase.from("prodi").delete().eq("id",confirmHapus);
+              if(error){setProdiMsg({type:"error",text:"Gagal hapus: "+error.message});}
+              else{
+                setProdi(prev=>prev.filter(p=>p.id!==confirmHapus));
+                setProdiMsg({type:"success",text:"✅ Prodi berhasil dihapus."});
+              }
+              setConfirmHapus(null); setSavingProdi(false);
+            }} disabled={savingProdi} className="btn btn-red" style={{fontSize:12}}>🗑️ Ya, Hapus</button>
+          </div>
+        </div>
+      )}
       <div className="two-col" style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10}}>
         {prodi.length===0?(
           <div className="card" style={{padding:18,gridColumn:"1/-1",textAlign:"center",color:T.muted,fontSize:13}}>Belum ada prodi — otomatis terdaftar saat upload data pertama.</div>
         ):prodi.map(p=>(
           <div key={p.id} className="card" style={{padding:14}}>
-            <div style={{fontWeight:700,color:T.navy,marginBottom:8,fontSize:13}}>{p.nama}</div>
-            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
-              <Tag label={p.jenjang||"-"} color={T.cyan}/>
-              <Tag label={`Akr. ${p.akreditasi||"-"}`} color={akrColor(p.akreditasi)}/>
-            </div>
+            {editProdi===p.id?(
+              <div>
+                <FieldRow label="Nama Prodi"><input value={prodiForm.nama} onChange={e=>setProdiForm({...prodiForm,nama:e.target.value})}/></FieldRow>
+                <FieldRow label="Jenjang">
+                  <select value={prodiForm.jenjang} onChange={e=>setProdiForm({...prodiForm,jenjang:e.target.value})}>
+                    <option value="">— Pilih —</option>
+                    {["D3","D4","S1","S2","S3","Profesi"].map(o=><option key={o}>{o}</option>)}
+                  </select>
+                </FieldRow>
+                <FieldRow label="Akreditasi">
+                  <select value={prodiForm.akreditasi} onChange={e=>setProdiForm({...prodiForm,akreditasi:e.target.value})}>
+                    <option value="">— Pilih —</option>
+                    {["A","B","C","Unggul","Baik Sekali","Baik","Belum Terakreditasi"].map(o=><option key={o}>{o}</option>)}
+                  </select>
+                </FieldRow>
+                <FieldRow label="Status">
+                  <select value={prodiForm.status} onChange={e=>setProdiForm({...prodiForm,status:e.target.value})}>
+                    <option value="">— Pilih —</option>
+                    {["Aktif","Nonaktif"].map(o=><option key={o}>{o}</option>)}
+                  </select>
+                </FieldRow>
+                <div style={{display:"flex",gap:8,marginTop:8}}>
+                  <button onClick={()=>{setEditProdi(null);setProdiMsg({type:"",text:""}); }} className="btn btn-ghost" style={{fontSize:12}}>Batal</button>
+                  <button onClick={async()=>{
+                    if(!prodiForm.nama.trim()) return setProdiMsg({type:"error",text:"Nama prodi wajib diisi."});
+                    setSavingProdi(true);
+                    const {error}=await supabase.from("prodi").update({nama:prodiForm.nama.trim(),jenjang:prodiForm.jenjang,akreditasi:prodiForm.akreditasi,status:prodiForm.status,updated_at:new Date().toISOString()}).eq("id",p.id);
+                    if(error){setProdiMsg({type:"error",text:"Gagal: "+error.message});}
+                    else{
+                      setProdi(prev=>prev.map(x=>x.id===p.id?{...x,...prodiForm}:x));
+                      setProdiMsg({type:"success",text:"✅ Prodi berhasil diperbarui."});
+                      setEditProdi(null);
+                    }
+                    setSavingProdi(false);
+                  }} disabled={savingProdi} className="btn btn-green" style={{fontSize:12}}>{savingProdi?"Menyimpan...":"💾 Simpan"}</button>
+                </div>
+              </div>
+            ):(
+              <>
+                <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:8}}>
+                  <div style={{fontWeight:700,color:T.navy,fontSize:13}}>{p.nama}</div>
+                  <div style={{display:"flex",gap:4}}>
+                    <button onClick={()=>{setEditProdi(p.id);setProdiForm({nama:p.nama||"",jenjang:p.jenjang||"",akreditasi:p.akreditasi||"",status:p.status||"Aktif"});setProdiMsg({type:"",text:""}); }} style={{background:"none",border:`1.5px solid ${T.border}`,borderRadius:6,padding:"3px 8px",cursor:"pointer",fontSize:11,color:T.navy,fontWeight:700}}>✏️</button>
+                    <button onClick={()=>setConfirmHapus(p.id)} style={{background:"none",border:`1.5px solid ${T.red}44`,borderRadius:6,padding:"3px 8px",cursor:"pointer",fontSize:11,color:T.red,fontWeight:700}}>🗑️</button>
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  <Tag label={p.jenjang||"-"} color={T.cyan}/>
+                  <Tag label={`Akr. ${p.akreditasi||"-"}`} color={akrColor(p.akreditasi)}/>
+                  {p.status&&p.status!=="Aktif"&&<Tag label={p.status} color={T.orange}/>}
+                </div>
+              </>
+            )}
           </div>
         ))}
       </div>
@@ -2061,6 +2139,11 @@ function PageDataPTH({ pthList, onRefreshPTH }) {
   const [requests,setRequests]=useState([]);
   const [actLoading,setActLoading]=useState(false);
   const [msg,setMsg]=useState({type:"",text:""});
+  const [editProdiSA,setEditProdiSA]=useState(null);
+  const [prodiFormSA,setProdiFormSA]=useState({nama:"",jenjang:"",akreditasi:"",status:""});
+  const [confirmHapusSA,setConfirmHapusSA]=useState(null);
+  const [savingProdiSA,setSavingProdiSA]=useState(false);
+  const [prodiListSA,setProdiListSA]=useState({});
 
   useEffect(()=>{
     supabase.from("name_change_requests").select("*,pth(nama)").eq("status","pending").order("created_at",{ascending:false})
@@ -2146,11 +2229,70 @@ function PageDataPTH({ pthList, onRefreshPTH }) {
             </div>
           </div>
           <h3 style={{fontWeight:800,color:T.navy,marginBottom:12}}>Prodi ({(p.prodi||[]).length})</h3>
+          {confirmHapusSA&&(
+            <div style={{background:T.redL,border:`1.5px solid ${T.red}33`,borderRadius:12,padding:"14px 18px",marginBottom:14}}>
+              <div style={{fontWeight:700,color:T.red,marginBottom:10}}>⚠️ Hapus prodi ini? Semua data terkait ikut terhapus!</div>
+              <div style={{display:"flex",gap:8}}>
+                <button onClick={()=>setConfirmHapusSA(null)} className="btn btn-ghost" style={{fontSize:12}}>Batal</button>
+                <button onClick={async()=>{
+                  setSavingProdiSA(true);
+                  await supabase.from("data_mahasiswa").delete().eq("prodi_id",confirmHapusSA);
+                  await supabase.from("data_dosen").delete().eq("prodi_id",confirmHapusSA);
+                  await supabase.from("data_tendik").delete().eq("prodi_id",confirmHapusSA);
+                  await supabase.from("pengurus_pth").delete().eq("prodi_id",confirmHapusSA);
+                  await supabase.from("prodi").delete().eq("id",confirmHapusSA);
+                  setConfirmHapusSA(null); setSavingProdiSA(false);
+                  onRefreshPTH&&onRefreshPTH();
+                }} disabled={savingProdiSA} className="btn btn-red" style={{fontSize:12}}>🗑️ Ya, Hapus</button>
+              </div>
+            </div>
+          )}
           <div className="two-col" style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:10}}>
             {(p.prodi||[]).map(pr=>(
               <div key={pr.id} className="card" style={{padding:14}}>
-                <div style={{fontWeight:700,color:T.navy,fontSize:13,marginBottom:8}}>{pr.nama}</div>
-                <div style={{display:"flex",gap:6}}><Tag label={pr.jenjang||"-"} color={T.cyan}/><Tag label={`Akr. ${pr.akreditasi||"-"}`} color={akrColor(pr.akreditasi)}/></div>
+                {editProdiSA===pr.id?(
+                  <div>
+                    <FieldRow label="Nama Prodi"><input value={prodiFormSA.nama} onChange={e=>setProdiFormSA({...prodiFormSA,nama:e.target.value})}/></FieldRow>
+                    <FieldRow label="Jenjang">
+                      <select value={prodiFormSA.jenjang} onChange={e=>setProdiFormSA({...prodiFormSA,jenjang:e.target.value})}>
+                        <option value="">— Pilih —</option>
+                        {["D3","D4","S1","S2","S3","Profesi"].map(o=><option key={o}>{o}</option>)}
+                      </select>
+                    </FieldRow>
+                    <FieldRow label="Akreditasi">
+                      <select value={prodiFormSA.akreditasi} onChange={e=>setProdiFormSA({...prodiFormSA,akreditasi:e.target.value})}>
+                        <option value="">— Pilih —</option>
+                        {["A","B","C","Unggul","Baik Sekali","Baik","Belum Terakreditasi"].map(o=><option key={o}>{o}</option>)}
+                      </select>
+                    </FieldRow>
+                    <FieldRow label="Status">
+                      <select value={prodiFormSA.status} onChange={e=>setProdiFormSA({...prodiFormSA,status:e.target.value})}>
+                        <option value="">— Pilih —</option>
+                        {["Aktif","Nonaktif"].map(o=><option key={o}>{o}</option>)}
+                      </select>
+                    </FieldRow>
+                    <div style={{display:"flex",gap:8,marginTop:8}}>
+                      <button onClick={()=>setEditProdiSA(null)} className="btn btn-ghost" style={{fontSize:12}}>Batal</button>
+                      <button onClick={async()=>{
+                        setSavingProdiSA(true);
+                        await supabase.from("prodi").update({nama:prodiFormSA.nama.trim(),jenjang:prodiFormSA.jenjang,akreditasi:prodiFormSA.akreditasi,status:prodiFormSA.status,updated_at:new Date().toISOString()}).eq("id",pr.id);
+                        setEditProdiSA(null); setSavingProdiSA(false);
+                        onRefreshPTH&&onRefreshPTH();
+                      }} disabled={savingProdiSA} className="btn btn-green" style={{fontSize:12}}>{savingProdiSA?"Menyimpan...":"💾 Simpan"}</button>
+                    </div>
+                  </div>
+                ):(
+                  <>
+                    <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:8}}>
+                      <div style={{fontWeight:700,color:T.navy,fontSize:13}}>{pr.nama}</div>
+                      <div style={{display:"flex",gap:4}}>
+                        <button onClick={()=>{setEditProdiSA(pr.id);setProdiFormSA({nama:pr.nama||"",jenjang:pr.jenjang||"",akreditasi:pr.akreditasi||"",status:pr.status||"Aktif"});}} style={{background:"none",border:`1.5px solid ${T.border}`,borderRadius:6,padding:"3px 8px",cursor:"pointer",fontSize:11,color:T.navy,fontWeight:700}}>✏️</button>
+                        <button onClick={()=>setConfirmHapusSA(pr.id)} style={{background:"none",border:`1.5px solid ${T.red}44`,borderRadius:6,padding:"3px 8px",cursor:"pointer",fontSize:11,color:T.red,fontWeight:700}}>🗑️</button>
+                      </div>
+                    </div>
+                    <div style={{display:"flex",gap:6}}><Tag label={pr.jenjang||"-"} color={T.cyan}/><Tag label={`Akr. ${pr.akreditasi||"-"}`} color={akrColor(pr.akreditasi)}/>{pr.status&&pr.status!=="Aktif"&&<Tag label={pr.status} color={T.orange}/>}</div>
+                  </>
+                )}
               </div>
             ))}
           </div>
