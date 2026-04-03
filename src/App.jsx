@@ -315,6 +315,37 @@ function FormProfilPTH({ user, onDone, onLogout }) {
   );
 }
 
+/* ── ACCORDION DOSEN CARD ── */
+function AccordionDosenCard({ title, items }) {
+  const [open, setOpen] = useState(null);
+  return (
+    <div className="card" style={{ padding:20 }}>
+      <h3 style={{ fontWeight:800, color:T.navy, marginBottom:12, fontSize:14 }}>{title}</h3>
+      {items.map(({label, value, color, perPTH})=>(
+        <div key={label}>
+          <div onClick={()=>setOpen(open===label?null:label)}
+            style={{ display:"flex", alignItems:"center", justifyContent:"space-between", padding:"10px 0", cursor:"pointer", borderBottom:"1px solid #dde6ef", userSelect:"none" }}>
+            <div style={{ display:"flex", alignItems:"center", gap:8, flex:1 }}>
+              <div style={{ width:10, height:10, borderRadius:"50%", background:color, flexShrink:0 }}/>
+              <span style={{ fontSize:13, fontWeight:600, color:T.text }}>{label}</span>
+            </div>
+            <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+              <span style={{ fontFamily:"'DM Mono',monospace", fontWeight:800, color, fontSize:15 }}>{value}</span>
+              <span style={{ color:T.muted, fontSize:11, transition:"transform 0.2s", display:"inline-block", transform:open===label?"rotate(180deg)":"rotate(0deg)" }}>▼</span>
+            </div>
+          </div>
+          {open===label&&(
+            <div className="fade-up" style={{ padding:"12px 0 6px" }}>
+              <div style={{ fontSize:11, fontWeight:800, color:T.muted, marginBottom:8, textTransform:"uppercase", letterSpacing:"0.05em" }}>Per PTH</div>
+              <BarChart color={color} data={perPTH}/>
+            </div>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 /* ── PUBLIC HEADER ── */
 function PublicHeader({ onLoginClick }) {
   return (
@@ -455,75 +486,33 @@ function PageStatistik({ pthList, prodiList, stats, FilterBar=()=>null, GrowthBa
       <SectionTitle title="👩‍🏫 Dosen" sub="Data dosen seluruh PTH" />
       <FilterBar/>
       <div style={{ display:"grid", gridTemplateColumns:isMobile?"1fr":"1fr 1fr 1fr", gap:12, marginBottom:16 }}>
-        {/* Berdasarkan Level Kaderisasi */}
-        <div className="card" style={{ padding:20 }}>
-          <h3 style={{ fontWeight:800, color:T.navy, marginBottom:12, fontSize:14 }}>Berdasarkan Level Kaderisasi</h3>
-          <BarChart data={[
-            { label:"Dosen Kader", value:dosen.kader, color:T.green },
-            { label:"Dosen Non-Kader", value:dosen.non_kader, color:T.muted },
-          ]} />
-          <div style={{ marginTop:12, paddingTop:12, borderTop:"1px solid #dde6ef" }}>
-            <div style={{ fontSize:11, fontWeight:800, color:T.muted, marginBottom:8 }}>Per PTH</div>
-            <BarChart color={T.green} data={pthList.map(p => {
-              const kader = (p.prodi||[]).reduce((s,pr) => {
-                const d = pr.latest_dosen||{};
-                return s+(d.tanpa_jad_kader||0)+(d.asisten_ahli_kader||0)+(d.lektor_kader||0)+(d.lektor_kepala_kader||0)+(d.guru_besar_kader||0);
-              }, 0);
-              return { label: truncName(p.nama), value: kader };
-            })} />
-          </div>
-        </div>
-        {/* Berdasarkan Pendidikan */}
-        <div className="card" style={{ padding:20 }}>
-          <h3 style={{ fontWeight:800, color:T.navy, marginBottom:12, fontSize:14 }}>Berdasarkan Pendidikan</h3>
-          <BarChart data={[
-            { label:"S3 / Doktor", value:dosen.s3, color:T.blue },
-            { label:"S2 / Magister", value:dosen.s2, color:T.cyan },
-          ]} />
-          <div style={{ marginTop:12, paddingTop:12, borderTop:"1px solid #dde6ef" }}>
-            <div style={{ fontSize:11, fontWeight:800, color:T.muted, marginBottom:8 }}>S3 per PTH</div>
-            <BarChart color={T.blue} data={pthList.map(p => ({
-              label: truncName(p.nama),
-              value: (p.prodi||[]).reduce((s,pr) => s + (pr.latest_dosen?.dosen_s3||0), 0)
-            }))} />
-          </div>
-          <div style={{ marginTop:12, paddingTop:12, borderTop:"1px solid #dde6ef" }}>
-            <div style={{ fontSize:11, fontWeight:800, color:T.muted, marginBottom:8 }}>S2 per PTH</div>
-            <BarChart color={T.cyan} data={pthList.map(p => ({
-              label: truncName(p.nama),
-              value: (p.prodi||[]).reduce((s,pr) => s + (pr.latest_dosen?.dosen_s2||0), 0)
-            }))} />
-          </div>
-        </div>
-        {/* Berdasarkan Jabatan Akademik */}
-        <div className="card" style={{ padding:20 }}>
-          <h3 style={{ fontWeight:800, color:T.navy, marginBottom:12, fontSize:14 }}>Berdasarkan Jabatan Akademik</h3>
-          <BarChart data={[
-            { label:"Guru Besar", value:dosen.guru_besar, color:"#7c3aed" },
-            { label:"Lektor Kepala", value:dosen.lektor_kepala, color:T.blue },
-            { label:"Lektor", value:dosen.lektor, color:T.cyan },
-            { label:"Asisten Ahli", value:dosen.asisten_ahli, color:T.teal },
-            { label:"Tanpa JAD", value:dosen.tanpa_jad, color:T.muted },
-          ]} />
-          {[
-            {label:"Guru Besar", kaderKey:"guru_besar_kader", nonKey:"guru_besar_non_kader", color:"#7c3aed"},
-            {label:"Lektor Kepala", kaderKey:"lektor_kepala_kader", nonKey:"lektor_kepala_non_kader", color:T.blue},
-            {label:"Lektor", kaderKey:"lektor_kader", nonKey:"lektor_non_kader", color:T.cyan},
-            {label:"Asisten Ahli", kaderKey:"asisten_ahli_kader", nonKey:"asisten_ahli_non_kader", color:T.teal},
-            {label:"Tanpa JAD", kaderKey:"tanpa_jad_kader", nonKey:"tanpa_jad_non_kader", color:T.muted},
-          ].map(({label, kaderKey, nonKey, color})=>(
-            <div key={label} style={{ marginTop:12, paddingTop:12, borderTop:"1px solid #dde6ef" }}>
-              <div style={{ fontSize:11, fontWeight:800, color:T.muted, marginBottom:8 }}>{label} per PTH</div>
-              <BarChart color={color} data={pthList.map(p => ({
-                label: truncName(p.nama),
-                value: (p.prodi||[]).reduce((s,pr) => {
-                  const d = pr.latest_dosen||{};
-                  return s + (d[kaderKey]||0) + (d[nonKey]||0);
-                }, 0)
-              }))} />
-            </div>
-          ))}
-        </div>
+        {/* Berdasarkan Level Kaderisasi - Accordion */}
+        <AccordionDosenCard
+          title="Berdasarkan Level Kaderisasi"
+          items={[
+            {label:"Dosen Kader", value:dosen.kader, color:T.green, perPTH:pthList.map(p=>({label:truncName(p.nama),value:(p.prodi||[]).reduce((s,pr)=>{const d=pr.latest_dosen||{};return s+(d.tanpa_jad_kader||0)+(d.asisten_ahli_kader||0)+(d.lektor_kader||0)+(d.lektor_kepala_kader||0)+(d.guru_besar_kader||0)},0)}))},
+            {label:"Dosen Non-Kader", value:dosen.non_kader, color:T.muted, perPTH:pthList.map(p=>({label:truncName(p.nama),value:(p.prodi||[]).reduce((s,pr)=>{const d=pr.latest_dosen||{};return s+(d.tanpa_jad_non_kader||0)+(d.asisten_ahli_non_kader||0)+(d.lektor_non_kader||0)+(d.lektor_kepala_non_kader||0)+(d.guru_besar_non_kader||0)},0)}))},
+          ]}
+        />
+        {/* Berdasarkan Pendidikan - Accordion */}
+        <AccordionDosenCard
+          title="Berdasarkan Pendidikan"
+          items={[
+            {label:"S3 / Doktor", value:dosen.s3, color:T.blue, perPTH:pthList.map(p=>({label:truncName(p.nama),value:(p.prodi||[]).reduce((s,pr)=>s+(pr.latest_dosen?.dosen_s3||0),0)}))},
+            {label:"S2 / Magister", value:dosen.s2, color:T.cyan, perPTH:pthList.map(p=>({label:truncName(p.nama),value:(p.prodi||[]).reduce((s,pr)=>s+(pr.latest_dosen?.dosen_s2||0),0)}))},
+          ]}
+        />
+        {/* Berdasarkan Jabatan Akademik - Accordion */}
+        <AccordionDosenCard
+          title="Berdasarkan Jabatan Akademik"
+          items={[
+            {label:"Guru Besar", value:dosen.guru_besar, color:"#7c3aed", perPTH:pthList.map(p=>({label:truncName(p.nama),value:(p.prodi||[]).reduce((s,pr)=>{const d=pr.latest_dosen||{};return s+(d.guru_besar_kader||0)+(d.guru_besar_non_kader||0)},0)}))},
+            {label:"Lektor Kepala", value:dosen.lektor_kepala, color:T.blue, perPTH:pthList.map(p=>({label:truncName(p.nama),value:(p.prodi||[]).reduce((s,pr)=>{const d=pr.latest_dosen||{};return s+(d.lektor_kepala_kader||0)+(d.lektor_kepala_non_kader||0)},0)}))},
+            {label:"Lektor", value:dosen.lektor, color:T.cyan, perPTH:pthList.map(p=>({label:truncName(p.nama),value:(p.prodi||[]).reduce((s,pr)=>{const d=pr.latest_dosen||{};return s+(d.lektor_kader||0)+(d.lektor_non_kader||0)},0)}))},
+            {label:"Asisten Ahli", value:dosen.asisten_ahli, color:T.teal, perPTH:pthList.map(p=>({label:truncName(p.nama),value:(p.prodi||[]).reduce((s,pr)=>{const d=pr.latest_dosen||{};return s+(d.asisten_ahli_kader||0)+(d.asisten_ahli_non_kader||0)},0)}))},
+            {label:"Tanpa JAD", value:dosen.tanpa_jad, color:T.muted, perPTH:pthList.map(p=>({label:truncName(p.nama),value:(p.prodi||[]).reduce((s,pr)=>{const d=pr.latest_dosen||{};return s+(d.tanpa_jad_kader||0)+(d.tanpa_jad_non_kader||0)},0)}))},
+          ]}
+        />
       </div>
     </div>
   );
