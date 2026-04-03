@@ -198,7 +198,7 @@ function parseExcel(file) {
             if(l.includes("Mahasiswa Baru")&&l.includes("Non")) d.mahasiswa.baru_non_kader=v;
             if(l.includes("Total Mahasiswa Baru")) d.mahasiswa.total_baru=v;
             if(l.includes("Kader")&&l.includes("Aktif")&&!l.includes("Non")&&!l.includes("Total")) d.mahasiswa.aktif_kader=v;
-            if(l.includes("Non Boarding")&&l.includes("Aktif")) d.mahasiswa.aktif_non_kader=v;
+            if((l.includes("Non Boarding")||l.includes("Non-Boarding")||l.includes("Aktif Non"))&&l.includes("Aktif")) d.mahasiswa.aktif_non_kader=v;
             if(l.includes("Total Mahasiswa Aktif")) d.mahasiswa.total_aktif=v;
             if(l.includes("Dalam Negeri")) d.mahasiswa.prestasi_dn=v;
             if(l.includes("Internasional")) d.mahasiswa.prestasi_int=v;
@@ -487,6 +487,13 @@ function PageStatistik({ pthList, prodiList, stats, FilterBar=()=>null, GrowthBa
               value: (p.prodi||[]).reduce((s,pr) => s + (pr.latest_dosen?.dosen_s3||0), 0)
             }))} />
           </div>
+          <div style={{ marginTop:12, paddingTop:12, borderTop:"1px solid #dde6ef" }}>
+            <div style={{ fontSize:11, fontWeight:800, color:T.muted, marginBottom:8 }}>S2 per PTH</div>
+            <BarChart color={T.cyan} data={pthList.map(p => ({
+              label: truncName(p.nama),
+              value: (p.prodi||[]).reduce((s,pr) => s + (pr.latest_dosen?.dosen_s2||0), 0)
+            }))} />
+          </div>
         </div>
         {/* Berdasarkan Jabatan Akademik */}
         <div className="card" style={{ padding:20 }}>
@@ -498,6 +505,24 @@ function PageStatistik({ pthList, prodiList, stats, FilterBar=()=>null, GrowthBa
             { label:"Asisten Ahli", value:dosen.asisten_ahli, color:T.teal },
             { label:"Tanpa JAD", value:dosen.tanpa_jad, color:T.muted },
           ]} />
+          {[
+            {label:"Guru Besar", kaderKey:"guru_besar_kader", nonKey:"guru_besar_non_kader", color:"#7c3aed"},
+            {label:"Lektor Kepala", kaderKey:"lektor_kepala_kader", nonKey:"lektor_kepala_non_kader", color:T.blue},
+            {label:"Lektor", kaderKey:"lektor_kader", nonKey:"lektor_non_kader", color:T.cyan},
+            {label:"Asisten Ahli", kaderKey:"asisten_ahli_kader", nonKey:"asisten_ahli_non_kader", color:T.teal},
+            {label:"Tanpa JAD", kaderKey:"tanpa_jad_kader", nonKey:"tanpa_jad_non_kader", color:T.muted},
+          ].map(({label, kaderKey, nonKey, color})=>(
+            <div key={label} style={{ marginTop:12, paddingTop:12, borderTop:"1px solid #dde6ef" }}>
+              <div style={{ fontSize:11, fontWeight:800, color:T.muted, marginBottom:8 }}>{label} per PTH</div>
+              <BarChart color={color} data={pthList.map(p => ({
+                label: truncName(p.nama),
+                value: (p.prodi||[]).reduce((s,pr) => {
+                  const d = pr.latest_dosen||{};
+                  return s + (d[kaderKey]||0) + (d[nonKey]||0);
+                }, 0)
+              }))} />
+            </div>
+          ))}
         </div>
       </div>
     </div>
