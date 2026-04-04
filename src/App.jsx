@@ -385,8 +385,8 @@ function PublicTabs({ active, setActive }) {
 }
 
 /* ── STATISTIK DRILL-DOWN ── */
-function PageStatistik({ pthList, prodiList, stats, FilterBar=()=>null, GrowthBadge=()=>null, prevStats={} }) {
-  const [drill, setDrill] = useState(null);
+function PageStatistik({ pthList, prodiList, stats, FilterBar=()=>null, GrowthBadge=()=>null, prevStats={}, initialDrill=null }) {
+  const [drill, setDrill] = useState(initialDrill);
   const { isMobile } = useBreakpoint();
   const { mhs, dosen, alumni, penelitian } = stats;
 
@@ -608,12 +608,31 @@ function PublicDashboard() {
   const [allMhs,setAllMhs]=useState([]); const [allDosen,setAllDosen]=useState([]);
   const [allPenelitian,setAllPenelitian]=useState([]); const [allKerjasama,setAllKerjasama]=useState([]);
   const [loading,setLoading]=useState(true);
-  const [activePage,setActivePage]=useState("dashboard");
+  // Baca hash URL untuk deep linking (misal: /#pth, /#prodi, /#statistik-mahasiswa)
+  const getInitialPage = () => {
+    const hash = window.location.hash.replace('#','');
+    if(['pth','prodi','statistik','dashboard'].includes(hash)) return hash;
+    return 'dashboard';
+  };
+  const getInitialDrill = () => {
+    const hash = window.location.hash.replace('#','');
+    if(hash==='statistik-mahasiswa') return 'mahasiswa';
+    if(hash==='statistik-dosen') return 'dosen';
+    if(hash==='statistik-alumni') return 'alumni';
+    if(hash==='statistik-penelitian') return 'penelitian';
+    return null;
+  };
+
+  const [activePage,setActivePage]=useState(getInitialPage());
+  const [drill,setDrill]=useState(getInitialDrill());
   const [selectedPTH,setSelectedPTH]=useState(null); const [selectedProdi,setSelectedProdi]=useState(null);
   const [pthPengurus,setPthPengurus]=useState({}); // cache: pth_id → pengurus[]
   const [filterMode,setFilterMode]=useState("berjalan"); // berjalan | tahun | kumulatif
   const [filterTA,setFilterTA]=useState(""); // dipilih kalau mode=tahun
   const {isMobile}=useBreakpoint();
+
+  // Update hash saat navigasi
+  const navTo = (page) => { setActivePage(page); setSelectedPTH(null); setSelectedProdi(null); window.location.hash = page; };
 
   useEffect(()=>{
     const loadData = async () => {
@@ -823,7 +842,7 @@ function PublicDashboard() {
     </div>
   );
 
-  const navTo=k=>{setActivePage(k);setSelectedPTH(null);setSelectedProdi(null);};
+  // navTo sudah didefinisikan di atas dengan hash support
   const stats={
     mhs:{
       total_aktif:pthList.reduce((s,p)=>(p.prodi||[]).reduce((s2,pr)=>s2+(pr.latest_mhs?.total_mhs_aktif||0),s),0),
@@ -1061,7 +1080,7 @@ function PublicDashboard() {
           </div>
         ))}
 
-        {activePage==="statistik"&&<PageStatistik pthList={pthList} prodiList={prodiListEnriched} stats={stats} FilterBar={FilterBar} GrowthBadge={GrowthBadge} prevStats={{mhs:prevMhsTotal,dosen:prevDosenTotal,alumni:prevAlumniTotal}}/>}
+        {activePage==="statistik"&&<PageStatistik pthList={pthList} prodiList={prodiListEnriched} stats={stats} FilterBar={FilterBar} GrowthBadge={GrowthBadge} prevStats={{mhs:prevMhsTotal,dosen:prevDosenTotal,alumni:prevAlumniTotal}} initialDrill={drill}/>}
 
         </>)}
       </div>
