@@ -612,6 +612,7 @@ function PublicDashboard() {
   const getInitialPage = () => {
     const hash = window.location.hash.replace('#','');
     if(['pth','prodi','statistik','dashboard'].includes(hash)) return hash;
+    if(['statistik-mahasiswa','statistik-dosen','statistik-alumni','statistik-penelitian'].includes(hash)) return 'statistik';
     return 'dashboard';
   };
   const getInitialDrill = () => {
