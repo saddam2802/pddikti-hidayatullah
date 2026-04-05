@@ -1617,6 +1617,27 @@ function PageApproval({ uploads, onRefresh }) {
 
   const act=async(id,status)=>{
     setLoading(true);
+    if(status==="approved"){
+      const upload=uploads.find(u=>u.id===id);
+      if(upload){
+        const {data:oldUploads}=await supabase.from("uploads")
+          .select("id")
+          .eq("pth_id",upload.pth_id)
+          .eq("semester",upload.semester)
+          .eq("tahun_akademik",upload.tahun_akademik)
+          .eq("status","approved")
+          .neq("id",id);
+        if(oldUploads&&oldUploads.length>0){
+          const oldIds=oldUploads.map(u=>u.id);
+          await supabase.from("data_dosen").delete().in("upload_id",oldIds);
+          await supabase.from("data_mahasiswa").delete().in("upload_id",oldIds);
+          await supabase.from("data_tendik").delete().in("upload_id",oldIds);
+          await supabase.from("data_penelitian").delete().in("upload_id",oldIds);
+          await supabase.from("data_kerjasama").delete().in("upload_id",oldIds);
+          await supabase.from("uploads").delete().in("id",oldIds);
+        }
+      }
+    }
     await supabase.from("uploads").update({status,reviewed_at:new Date().toISOString()}).eq("id",id);
     setPreviewing(null); setPreviewData(null);
     onRefresh(); setLoading(false);
