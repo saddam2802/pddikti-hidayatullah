@@ -705,53 +705,124 @@ function PublicDashboard() {
   const prevTA   = allTA[1] || "";
 
   // Filter data berdasarkan mode
-  const filterData = (rows, ta) => {
+  // Normalisasi semester string → "Ganjil" | "Genap"
+  // FIX v12 Bug4: handles "ganjil", "GANJIL", "Semester Ganjil", dst
+  const normSemester = (s) => {
+    if(!s) return "";
+    const lower = String(s).toLowerCase();
+    if(lower.includes("ganjil")) return "Ganjil";
+    if(lower.includes("genap"))  return "Genap";
+    return s;
+  };
+
+  // FIX v12 Bug1: filterData mode berjalan hanya filter by latestTA global.
+  // PTH yang belum upload TA terbaru akan return [] di sini →
+  // aggMhs/aggDosen menangani fallback ke data terbaru milik prodi itu sendiri.
+  const filterData = (rows) => {
     if(filterMode==="berjalan") return rows.filter(r=>r.tahun_akademik===latestTA);
     if(filterMode==="tahun")    return rows.filter(r=>r.tahun_akademik===(filterTA||latestTA));
     return rows; // kumulatif = semua
   };
 
   // Agregasi data per prodi/pth berdasarkan filter
+  // FIX v12: mahasiswa aktif & student_body = snapshot terbaru (bukan dijumlah antar semester)
+  // mahasiswa baru & prestasi = boleh dijumlah (akumulatif dalam rentang filter)
+  // FIX v12 Bug1: jika PTH belum upload latestTA global → fallback ke data terbaru milik prodi ini
+  // FIX v12 Bug2: setiap prodi fetch data terbaru sendiri-sendiri (tidak dipengaruhi prodi lain)
+  // FIX v12 Bug4: normalisasi semester sebelum sort
   const aggMhs = (prodiId) => {
-    const rows = filterData(allMhs).filter(r=>r.prodi_id===prodiId);
-    if(!rows.length) return {};
-    return rows.reduce((acc,r)=>({
-      total_mhs_aktif:(acc.total_mhs_aktif||0)+(r.total_mhs_aktif||0),
+    // Ambil semua data milik prodi ini tanpa filter TA (untuk fallback Bug1)
+    const allProdiRows = allMhs.filter(r=>r.prodi_id===prodiId);
+    if(!allProdiRows.length) return {};
+
+    // Helper sort: terbaru dulu — normalisasi semester dulu (Bug4)
+    const sortDesc = (arr) => [...arr].sort((a,b)=>{
+      if(b.tahun_akademik !== a.tahun_akademik) return b.tahun_akademik > a.tahun_akademik ? 1 : -1;
+      const sa = normSemester(a.semester); const sb = normSemester(b.semester);
+      if(sa==="Genap" && sb==="Ganjil") return 1;
+      if(sa==="Ganjil" && sb==="Genap") return -1;
+      return 0;
+    });
+
+    // Data yang sesuai filter aktif
+    let rows = filterData(allMhs).filter(r=>r.prodi_id===prodiId);
+
+    // Bug1 Fallback: jika filter mengembalikan kosong (PTH belum upload TA terbaru),
+    // gunakan data terbaru yang prodi ini punya — lebih baik tampil data lama daripada 0
+    if(!rows.length) rows = [sortDesc(allProdiRows)[0]];
+
+    const sortedDesc = sortDesc(rows);
+    const latest = sortedDesc[0];
+
+    // Mahasiswa baru & prestasi: dijumlah dalam rentang filter
+    const sumBaru = rows.reduce((acc,r)=>({
       total_mhs_baru:(acc.total_mhs_baru||0)+(r.total_mhs_baru||0),
-      mhs_aktif_kader:(acc.mhs_aktif_kader||0)+(r.mhs_aktif_kader||0),
       mhs_baru_kader:(acc.mhs_baru_kader||0)+(r.mhs_baru_kader||0),
+      mhs_baru_non_kader:(acc.mhs_baru_non_kader||0)+(r.mhs_baru_non_kader||0),
       prestasi_dalam_negeri:(acc.prestasi_dalam_negeri||0)+(r.prestasi_dalam_negeri||0),
       prestasi_internasional:(acc.prestasi_internasional||0)+(r.prestasi_internasional||0),
     }),{});
+
+    // Mode berjalan / per tahun: ambil dari latest
+    if(filterMode !== "kumulatif") {
+      return {
+        total_mhs_aktif: latest.total_mhs_aktif||0,
+        total_mhs_baru: latest.total_mhs_baru||0,
+        mhs_aktif_kader: latest.mhs_aktif_kader||0,
+        mhs_aktif_non_kader: latest.mhs_aktif_non_kader||0,
+        mhs_baru_kader: latest.mhs_baru_kader||0,
+        mhs_baru_non_kader: latest.mhs_baru_non_kader||0,
+        student_body: latest.student_body||0,
+        prestasi_dalam_negeri: latest.prestasi_dalam_negeri||0,
+        prestasi_internasional: latest.prestasi_internasional||0,
+        _fallback: filterData(allMhs).filter(r=>r.prodi_id===prodiId).length===0, // flag untuk UI
+      };
+    }
+
+    // Mode kumulatif: aktif = snapshot terbaru dari SEMUA data prodi ini
+    const latestAll = sortDesc(allProdiRows)[0];
+    return {
+      total_mhs_aktif: latestAll.total_mhs_aktif||0,
+      mhs_aktif_kader: latestAll.mhs_aktif_kader||0,
+      mhs_aktif_non_kader: latestAll.mhs_aktif_non_kader||0,
+      student_body: latestAll.student_body||0,
+      total_mhs_baru: sumBaru.total_mhs_baru||0,
+      mhs_baru_kader: sumBaru.mhs_baru_kader||0,
+      mhs_baru_non_kader: sumBaru.mhs_baru_non_kader||0,
+      prestasi_dalam_negeri: sumBaru.prestasi_dalam_negeri||0,
+      prestasi_internasional: sumBaru.prestasi_internasional||0,
+    };
   };
 
   const aggDosen = (prodiId) => {
-    const rows = filterData(allDosen).filter(r=>r.prodi_id===prodiId);
-    if(!rows.length) return {};
-    // kumulatif dosen: ambil terbaru per prodi (bukan dijumlah — dosen tidak bertambah tiap semester)
-    if(filterMode==="kumulatif"){
-      const sorted=rows.sort((a,b)=>b.tahun_akademik>a.tahun_akademik?1:-1);
-      return sorted[0];
-    }
-    return rows.reduce((acc,r)=>({
-      dosen_s2:(acc.dosen_s2||0)+(r.dosen_s2||0),
-      dosen_s3:(acc.dosen_s3||0)+(r.dosen_s3||0),
-      tanpa_jad_kader:(acc.tanpa_jad_kader||0)+(r.tanpa_jad_kader||0),
-      tanpa_jad_non_kader:(acc.tanpa_jad_non_kader||0)+(r.tanpa_jad_non_kader||0),
-      asisten_ahli_kader:(acc.asisten_ahli_kader||0)+(r.asisten_ahli_kader||0),
-      asisten_ahli_non_kader:(acc.asisten_ahli_non_kader||0)+(r.asisten_ahli_non_kader||0),
-      lektor_kader:(acc.lektor_kader||0)+(r.lektor_kader||0),
-      lektor_non_kader:(acc.lektor_non_kader||0)+(r.lektor_non_kader||0),
-      lektor_kepala_kader:(acc.lektor_kepala_kader||0)+(r.lektor_kepala_kader||0),
-      lektor_kepala_non_kader:(acc.lektor_kepala_non_kader||0)+(r.lektor_kepala_non_kader||0),
-      guru_besar_kader:(acc.guru_besar_kader||0)+(r.guru_besar_kader||0),
-      guru_besar_non_kader:(acc.guru_besar_non_kader||0)+(r.guru_besar_non_kader||0),
-    }),{});
+    // FIX v12 Bug1+Bug2: fallback ke data terbaru milik prodi ini jika filter kosong
+    // FIX v12: dosen selalu ambil snapshot terbaru — tidak pernah dijumlah antar semester
+    const allProdiRows = allDosen.filter(r=>r.prodi_id===prodiId);
+    if(!allProdiRows.length) return {};
+
+    const sortDesc = (arr) => [...arr].sort((a,b)=>{
+      if(b.tahun_akademik !== a.tahun_akademik) return b.tahun_akademik > a.tahun_akademik ? 1 : -1;
+      const sa = normSemester(a.semester); const sb = normSemester(b.semester);
+      if(sa==="Genap" && sb==="Ganjil") return 1;
+      if(sa==="Ganjil" && sb==="Genap") return -1;
+      return 0;
+    });
+
+    let rows = filterData(allDosen).filter(r=>r.prodi_id===prodiId);
+    // Fallback: PTH belum upload TA terbaru → pakai data terbaru yang ada
+    if(!rows.length) rows = [sortDesc(allProdiRows)[0]];
+
+    // Dosen: selalu snapshot terbaru (bukan sum) di semua mode
+    return sortDesc(rows)[0];
   };
 
   const aggPenelitian = (pthId) => {
-    const rows = filterData(allPenelitian).filter(r=>r.pth_id===pthId);
-    if(!rows.length) return {};
+    // FIX v12 Bug1: fallback ke data terbaru jika PTH belum upload TA terbaru
+    const allPthRows = allPenelitian.filter(r=>r.pth_id===pthId);
+    if(!allPthRows.length) return {};
+    const sortDesc = (arr) => [...arr].sort((a,b)=>b.tahun_akademik>a.tahun_akademik?1:-1);
+    let rows = filterData(allPenelitian).filter(r=>r.pth_id===pthId);
+    if(!rows.length) rows = [sortDesc(allPthRows)[0]];
     if(filterMode==="kumulatif"){
       return rows.reduce((acc,r)=>({
         sinta_score:(acc.sinta_score||0)+(parseFloat(r.sinta_score)||0),
@@ -761,23 +832,18 @@ function PublicDashboard() {
         scopus_citation:(acc.scopus_citation||0)+(r.scopus_citation||0),
       }),{});
     }
-    const sorted=rows.sort((a,b)=>b.tahun_akademik>a.tahun_akademik?1:-1);
-    return sorted[0]||{};
+    return sortDesc(rows)[0]||{};
   };
 
   const aggKerjasama = (pthId) => {
-    const rows = filterData(allKerjasama).filter(r=>r.pth_id===pthId);
-    if(!rows.length) return {};
-    // Alumni & kerjasama: ambil data terbaru saja (bukan dijumlah per semester)
-    // karena alumni adalah angka kumulatif yang sudah dihitung di sumber data
-    if(filterMode==="kumulatif"){
-      // Mode kumulatif: ambil terbaru (sudah mencakup semua alumni)
-      const sorted=[...rows].sort((a,b)=>b.tahun_akademik>a.tahun_akademik?1:-1);
-      return sorted[0]||{};
-    }
-    // Mode berjalan/per tahun: ambil terbaru dari filter yang aktif
-    const sorted=[...rows].sort((a,b)=>b.tahun_akademik>a.tahun_akademik?1:-1);
-    return sorted[0]||{};
+    // FIX v12 Bug1: fallback ke data terbaru jika PTH belum upload TA terbaru
+    // Alumni & kerjasama: selalu snapshot terbaru (angka kumulatif sudah dihitung di sumber data)
+    const allPthRows = allKerjasama.filter(r=>r.pth_id===pthId);
+    if(!allPthRows.length) return {};
+    const sortDesc = (arr) => [...arr].sort((a,b)=>b.tahun_akademik>a.tahun_akademik?1:-1);
+    let rows = filterData(allKerjasama).filter(r=>r.pth_id===pthId);
+    if(!rows.length) rows = [sortDesc(allPthRows)[0]];
+    return sortDesc(rows)[0]||{};
   };
 
   // Build pthList dengan data terfilter
@@ -801,7 +867,8 @@ function PublicDashboard() {
 
   // Data tahun sebelumnya untuk pertumbuhan (selalu pakai prevTA)
   const prevMhsTotal = allMhs.filter(r=>r.tahun_akademik===prevTA).reduce((s,r)=>s+(r.total_mhs_aktif||0),0);
-  const prevDosenTotal = allDosen.filter(r=>r.tahun_akademik===prevTA).reduce((s,r)=>s+(r.dosen_s2||0)+(r.dosen_s3||0),0);
+  // FIX v12: prevDosenTotal pakai total JAD bukan hanya S2+S3
+  const prevDosenTotal = allDosen.filter(r=>r.tahun_akademik===prevTA).reduce((s,r)=>s+(r.tanpa_jad_kader||0)+(r.tanpa_jad_non_kader||0)+(r.asisten_ahli_kader||0)+(r.asisten_ahli_non_kader||0)+(r.lektor_kader||0)+(r.lektor_non_kader||0)+(r.lektor_kepala_kader||0)+(r.lektor_kepala_non_kader||0)+(r.guru_besar_kader||0)+(r.guru_besar_non_kader||0),0);
   const prevAlumniTotal = allKerjasama.filter(r=>r.tahun_akademik===prevTA).reduce((s,r)=>s+(r.alumni_kader||0)+(r.alumni_non_kader||0),0);
 
   const growth = (cur,prev) => {
@@ -857,7 +924,8 @@ function PublicDashboard() {
       prestasi_int:pthList.reduce((s,p)=>(p.prodi||[]).reduce((s2,pr)=>s2+(pr.latest_mhs?.prestasi_internasional||0),s),0),
     },
     dosen:{
-      total:pthList.reduce((s,p)=>(p.prodi||[]).reduce((s2,pr)=>s2+(pr.latest_dosen?.dosen_s2||0)+(pr.latest_dosen?.dosen_s3||0),s),0),
+      // FIX v12: total dosen = sum semua JAD (kader+non-kader), bukan hanya S2+S3
+      total:pthList.reduce((s,p)=>(p.prodi||[]).reduce((s2,pr)=>{const d=pr.latest_dosen||{};return s2+(d.tanpa_jad_kader||0)+(d.tanpa_jad_non_kader||0)+(d.asisten_ahli_kader||0)+(d.asisten_ahli_non_kader||0)+(d.lektor_kader||0)+(d.lektor_non_kader||0)+(d.lektor_kepala_kader||0)+(d.lektor_kepala_non_kader||0)+(d.guru_besar_kader||0)+(d.guru_besar_non_kader||0)},s),0),
       kader:pthList.reduce((s,p)=>(p.prodi||[]).reduce((s2,pr)=>{const d=pr.latest_dosen||{};return s2+(d.tanpa_jad_kader||0)+(d.asisten_ahli_kader||0)+(d.lektor_kader||0)+(d.lektor_kepala_kader||0)+(d.guru_besar_kader||0)},s),0),
       non_kader:pthList.reduce((s,p)=>(p.prodi||[]).reduce((s2,pr)=>{const d=pr.latest_dosen||{};return s2+(d.tanpa_jad_non_kader||0)+(d.asisten_ahli_non_kader||0)+(d.lektor_non_kader||0)+(d.lektor_kepala_non_kader||0)+(d.guru_besar_non_kader||0)},s),0),
       s2:pthList.reduce((s,p)=>(p.prodi||[]).reduce((s2,pr)=>s2+(pr.latest_dosen?.dosen_s2||0),s),0),
@@ -945,7 +1013,7 @@ function PublicDashboard() {
             </div>
             <div className="stat-grid" style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:16}}>
               <StatCard icon="🎓" value={(selectedPTH.prodi||[]).reduce((s,pr)=>s+(pr.latest_mhs?.total_mhs_aktif||0),0)} label="Mahasiswa" color={T.blue}/>
-              <StatCard icon="👩‍🏫" value={(selectedPTH.prodi||[]).reduce((s,pr)=>s+(pr.latest_dosen?.dosen_s2||0)+(pr.latest_dosen?.dosen_s3||0),0)} label="Dosen" color={T.teal}/>
+              <StatCard icon="👩‍🏫" value={(selectedPTH.prodi||[]).reduce((s,pr)=>{const d=pr.latest_dosen||{};return s+(d.tanpa_jad_kader||0)+(d.tanpa_jad_non_kader||0)+(d.asisten_ahli_kader||0)+(d.asisten_ahli_non_kader||0)+(d.lektor_kader||0)+(d.lektor_non_kader||0)+(d.lektor_kepala_kader||0)+(d.lektor_kepala_non_kader||0)+(d.guru_besar_kader||0)+(d.guru_besar_non_kader||0)},0)} label="Dosen" color={T.teal}/>
               <StatCard icon="📚" value={(selectedPTH.prodi||[]).length} label="Prodi" color={T.cyan}/>
               <StatCard icon="👨‍🎓" value={(selectedPTH.latest_kerjasama?.alumni_kader||0)+(selectedPTH.latest_kerjasama?.alumni_non_kader||0)} label="Alumni" color={T.green}/>
             </div>
@@ -965,7 +1033,7 @@ function PublicDashboard() {
                     </div>
                     <div style={{background:T.bg,borderRadius:8,padding:"8px 12px"}}>
                       <div style={{fontSize:10,color:T.muted,fontWeight:700}}>Dosen</div>
-                      <div style={{fontWeight:900,color:T.teal,fontSize:16,fontFamily:"'DM Mono',monospace"}}>{(pr.latest_dosen?.dosen_s2||0)+(pr.latest_dosen?.dosen_s3||0)}</div>
+                      <div style={{fontWeight:900,color:T.teal,fontSize:16,fontFamily:"'DM Mono',monospace"}}>{(()=>{const d=pr.latest_dosen||{};return (d.tanpa_jad_kader||0)+(d.tanpa_jad_non_kader||0)+(d.asisten_ahli_kader||0)+(d.asisten_ahli_non_kader||0)+(d.lektor_kader||0)+(d.lektor_non_kader||0)+(d.lektor_kepala_kader||0)+(d.lektor_kepala_non_kader||0)+(d.guru_besar_kader||0)+(d.guru_besar_non_kader||0)})()}</div>
                     </div>
                   </div>
                 </div>
@@ -1026,7 +1094,7 @@ function PublicDashboard() {
                   </div>
                   <div style={{fontSize:11,color:T.muted,marginBottom:10}}>📍 {p.kota}, {p.provinsi}</div>
                   <div style={{display:"flex",gap:8,marginBottom:10}}>
-                    {[[(p.prodi||[]).reduce((s,pr)=>s+(pr.latest_mhs?.total_mhs_aktif||0),0),"Mhs",T.blue],[(p.prodi||[]).reduce((s,pr)=>s+(pr.latest_dosen?.dosen_s2||0)+(pr.latest_dosen?.dosen_s3||0),0),"Dosen",T.teal],[(p.prodi||[]).length,"Prodi",T.cyan]].map(([v,l,c])=>(
+                    {[[(p.prodi||[]).reduce((s,pr)=>s+(pr.latest_mhs?.total_mhs_aktif||0),0),"Mhs",T.blue],[(p.prodi||[]).reduce((s,pr)=>{const d=pr.latest_dosen||{};return s+(d.tanpa_jad_kader||0)+(d.tanpa_jad_non_kader||0)+(d.asisten_ahli_kader||0)+(d.asisten_ahli_non_kader||0)+(d.lektor_kader||0)+(d.lektor_non_kader||0)+(d.lektor_kepala_kader||0)+(d.lektor_kepala_non_kader||0)+(d.guru_besar_kader||0)+(d.guru_besar_non_kader||0)},0),"Dosen",T.teal],[(p.prodi||[]).length,"Prodi",T.cyan]].map(([v,l,c])=>(
                       <div key={l} style={{textAlign:"center",flex:1,background:T.bg,borderRadius:8,padding:"6px 4px"}}>
                         <div style={{fontWeight:900,color:c,fontSize:15,fontFamily:"'DM Mono',monospace"}}>{v}</div>
                         <div style={{fontSize:10,color:T.muted,fontWeight:700}}>{l}</div>
@@ -1059,7 +1127,7 @@ function PublicDashboard() {
               <StatCard icon="🎓" value={selectedProdi.latest_mhs?.total_mhs_aktif||0} label="Mahasiswa Aktif" color={T.blue}/>
               <StatCard icon="🆕" value={selectedProdi.latest_mhs?.total_mhs_baru||0} label="Mahasiswa Baru" color={T.cyan}/>
               <StatCard icon="🟢" value={selectedProdi.latest_mhs?.mhs_aktif_kader||0} label="Kader Aktif" color={T.green}/>
-              <StatCard icon="👩‍🏫" value={(selectedProdi.latest_dosen?.dosen_s2||0)+(selectedProdi.latest_dosen?.dosen_s3||0)} label="Total Dosen" color={T.teal}/>
+              <StatCard icon="👩‍🏫" value={(()=>{const d=selectedProdi.latest_dosen||{};return (d.tanpa_jad_kader||0)+(d.tanpa_jad_non_kader||0)+(d.asisten_ahli_kader||0)+(d.asisten_ahli_non_kader||0)+(d.lektor_kader||0)+(d.lektor_non_kader||0)+(d.lektor_kepala_kader||0)+(d.lektor_kepala_non_kader||0)+(d.guru_besar_kader||0)+(d.guru_besar_non_kader||0)})()} label="Total Dosen" color={T.teal}/>
             </div>
           </div>
         ):(
@@ -1077,7 +1145,7 @@ function PublicDashboard() {
                         <td><Tag label={pr.jenjang||"-"} color={T.cyan}/></td>
                         <td><Tag label={pr.akreditasi||"-"} color={akrColor(pr.akreditasi)}/></td>
                         <td style={{fontWeight:800,fontFamily:"'DM Mono',monospace",color:T.blue}}>{pr.latest_mhs?.total_mhs_aktif||0}</td>
-                        <td className="hide-mobile" style={{fontWeight:800,fontFamily:"'DM Mono',monospace",color:T.teal}}>{(pr.latest_dosen?.dosen_s2||0)+(pr.latest_dosen?.dosen_s3||0)}</td>
+                        <td className="hide-mobile" style={{fontWeight:800,fontFamily:"'DM Mono',monospace",color:T.teal}}>{(()=>{const d=pr.latest_dosen||{};return (d.tanpa_jad_kader||0)+(d.tanpa_jad_non_kader||0)+(d.asisten_ahli_kader||0)+(d.asisten_ahli_non_kader||0)+(d.lektor_kader||0)+(d.lektor_non_kader||0)+(d.lektor_kepala_kader||0)+(d.lektor_kepala_non_kader||0)+(d.guru_besar_kader||0)+(d.guru_besar_non_kader||0)})()}</td>
                       </tr>
                     ))}
                   </tbody>
