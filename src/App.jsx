@@ -768,12 +768,16 @@ function PublicDashboard() {
   const aggKerjasama = (pthId) => {
     const rows = filterData(allKerjasama).filter(r=>r.pth_id===pthId);
     if(!rows.length) return {};
-    return rows.reduce((acc,r)=>({
-      alumni_kader:(acc.alumni_kader||0)+(r.alumni_kader||0),
-      alumni_non_kader:(acc.alumni_non_kader||0)+(r.alumni_non_kader||0),
-      kerjasama_dn:(acc.kerjasama_dn||0)+(r.kerjasama_dn||0),
-      kerjasama_ln:(acc.kerjasama_ln||0)+(r.kerjasama_ln||0),
-    }),{});
+    // Alumni & kerjasama: ambil data terbaru saja (bukan dijumlah per semester)
+    // karena alumni adalah angka kumulatif yang sudah dihitung di sumber data
+    if(filterMode==="kumulatif"){
+      // Mode kumulatif: ambil terbaru (sudah mencakup semua alumni)
+      const sorted=[...rows].sort((a,b)=>b.tahun_akademik>a.tahun_akademik?1:-1);
+      return sorted[0]||{};
+    }
+    // Mode berjalan/per tahun: ambil terbaru dari filter yang aktif
+    const sorted=[...rows].sort((a,b)=>b.tahun_akademik>a.tahun_akademik?1:-1);
+    return sorted[0]||{};
   };
 
   // Build pthList dengan data terfilter
