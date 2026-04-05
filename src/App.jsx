@@ -912,6 +912,7 @@ function PublicDashboard() {
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontWeight:700,color:T.text,fontSize:13,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{p.nama}</div>
                     <div style={{fontSize:11,color:T.muted}}>📍 {p.kota} · {(p.prodi||[]).length} Prodi</div>
+                    {p.website&&<div style={{fontSize:11,marginTop:2}}><a href={p.website.startsWith("http")?p.website:"https://"+p.website} target="_blank" rel="noreferrer" style={{color:T.blue,fontWeight:600}} onClick={e=>e.stopPropagation()}>🌐 {p.website}</a></div>}
                   </div>
                   <Tag label={`Akr. ${p.akreditasi||"-"}`} color={akrColor(p.akreditasi)}/>
                 </div>
@@ -928,7 +929,8 @@ function PublicDashboard() {
                 <div style={{width:52,height:52,borderRadius:14,background:T.navyL,display:"flex",alignItems:"center",justifyContent:"center",color:T.accent,fontWeight:900,fontSize:18,flexShrink:0}}>{selectedPTH.nama.split(" ").map(x=>x[0]).slice(0,2).join("")}</div>
                 <div>
                   <h2 style={{fontWeight:900,color:T.navy,fontSize:17}}>{selectedPTH.nama}</h2>
-                  <p style={{color:T.muted,fontSize:13,margin:"4px 0 10px"}}>📍 {selectedPTH.kota}, {selectedPTH.provinsi}</p>
+                  <p style={{color:T.muted,fontSize:13,margin:"4px 0 6px"}}>📍 {selectedPTH.kota}, {selectedPTH.provinsi}</p>
+                  {selectedPTH.website&&<p style={{fontSize:12,margin:"0 0 10px"}}><a href={selectedPTH.website.startsWith("http")?selectedPTH.website:"https://"+selectedPTH.website} target="_blank" rel="noreferrer" style={{color:T.blue,fontWeight:600}}>🌐 {selectedPTH.website}</a></p>}
                   <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
                     <Tag label={`Akr. ${selectedPTH.akreditasi||"-"}`} color={akrColor(selectedPTH.akreditasi)}/>
                     <Tag label={selectedPTH.status||"Aktif"} color={T.green}/>
