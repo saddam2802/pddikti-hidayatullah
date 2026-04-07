@@ -1255,26 +1255,37 @@ function PageUpload({ user, onDone }) {
       const filePath=`excel/${uploadId}_${file.name}`;
       await supabase.storage.from("uploads").upload(filePath, file, {contentType:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",upsert:true});
       await supabase.from("uploads").update({file_path:filePath}).eq("id",uploadId);
+
+      // Track prodi baru yang dibuat dari upload ini
+      // supaya saat reject, bisa hapus persis prodi yang dibuat upload ini
+      const newProdiIds = [];
+
       for(const pi of parsed.daftarProdi){
         let {data:pd}=await supabase.from("prodi").select("id").eq("pth_id",user.pth_id).eq("nama",pi.nama).single();
         if(!pd){
-          // Prodi baru → insert dengan data dari Excel
+          // Prodi baru → insert, catat id-nya
           const {data:np}=await supabase.from("prodi").insert({
-            pth_id:user.pth_id,nama:pi.nama,
+            pth_id:user.pth_id, nama:pi.nama,
             jenjang:pi.jenjang||"",
-            // FIX Bug1: hanya set akreditasi kalau ada nilainya
-            akreditasi:pi.akreditasi||""
+            akreditasi:pi.akreditasi||"",
           }).select().single();
           pd=np;
+          if(pd?.id) newProdiIds.push(pd.id); // catat sebagai prodi baru dari upload ini
         }
-        // FIX Bug1: saat upload pending, JANGAN update jenjang/akreditasi prodi yang sudah ada
+        // Saat upload pending, JANGAN update jenjang/akreditasi prodi yang sudah ada
         // Update prodi hanya dilakukan saat approve (di act function)
-        // Ini mencegah akreditasi kosong di Excel menimpa nilai valid di DB
         const d=parsed.prodi[pi.nama]; if(!d) continue;
         await supabase.from("data_dosen").insert({upload_id:uploadId,pth_id:user.pth_id,prodi_id:pd.id,semester:parsed.identitas.semester,tahun_akademik:parsed.identitas.tahun_akademik,dosen_s2:d.dosen.s2||0,dosen_s3:d.dosen.s3||0,tanpa_jad_kader:d.dosen.tanpa_jad_kader||0,tanpa_jad_non_kader:d.dosen.tanpa_jad_non_kader||0,asisten_ahli_kader:d.dosen.asisten_ahli_kader||0,asisten_ahli_non_kader:d.dosen.asisten_ahli_non_kader||0,lektor_kader:d.dosen.lektor_kader||0,lektor_non_kader:d.dosen.lektor_non_kader||0,lektor_kepala_kader:d.dosen.lektor_kepala_kader||0,lektor_kepala_non_kader:d.dosen.lektor_kepala_non_kader||0,guru_besar_kader:d.dosen.guru_besar_kader||0,guru_besar_non_kader:d.dosen.guru_besar_non_kader||0});
         await supabase.from("data_tendik").insert({upload_id:uploadId,pth_id:user.pth_id,prodi_id:pd.id,semester:parsed.identitas.semester,tahun_akademik:parsed.identitas.tahun_akademik,tendik_kader:d.tendik.kader||0,tendik_non_kader:d.tendik.non_kader||0});
         await supabase.from("data_mahasiswa").insert({upload_id:uploadId,pth_id:user.pth_id,prodi_id:pd.id,semester:parsed.identitas.semester,tahun_akademik:parsed.identitas.tahun_akademik,student_body:d.mahasiswa.student_body||0,mhs_baru_kader:d.mahasiswa.baru_kader||0,mhs_baru_non_kader:d.mahasiswa.baru_non_kader||0,total_mhs_baru:d.mahasiswa.total_baru||0,mhs_aktif_kader:d.mahasiswa.aktif_kader||0,mhs_aktif_non_kader:d.mahasiswa.aktif_non_kader||0,total_mhs_aktif:d.mahasiswa.total_aktif||0,prestasi_dalam_negeri:d.mahasiswa.prestasi_dn||0,prestasi_internasional:d.mahasiswa.prestasi_int||0});
       }
+
+      // Simpan daftar prodi baru ke kolom new_prodi_ids di uploads
+      // supaya saat reject bisa hapus prodi yang tepat
+      if(newProdiIds.length>0){
+        await supabase.from("uploads").update({new_prodi_ids:newProdiIds}).eq("id",uploadId);
+      }
+
       const p=parsed.pth;
       await supabase.from("data_penelitian").insert({upload_id:uploadId,pth_id:user.pth_id,semester:parsed.identitas.semester,tahun_akademik:parsed.identitas.tahun_akademik,jumlah_jurnal:p.jumlah_jurnal||0,akreditasi_jurnal:p.akreditasi_jurnal||"",sinta_score:p.sinta_score||0,gscholar_artikel:p.gscholar_artikel||0,gscholar_citation:p.gscholar_citation||0,scopus_artikel:p.scopus_artikel||0,scopus_citation:p.scopus_citation||0,hibah_pemerintah:p.hibah_pemerintah||0,hibah_eksternal:p.hibah_eksternal||0});
       await supabase.from("data_kerjasama").insert({upload_id:uploadId,pth_id:user.pth_id,semester:parsed.identitas.semester,tahun_akademik:parsed.identitas.tahun_akademik,kerjasama_ln:p.kerjasama_ln||0,kerjasama_dn:p.kerjasama_dn||0,alumni_kader:p.alumni_kader||0,alumni_non_kader:p.alumni_non_kader||0,nama_ketua_alumni:p.nama_ketua_alumni||"",hp_ketua_alumni:p.hp_ketua_alumni||""});
@@ -1804,12 +1815,25 @@ function PageApproval({ uploads, onRefresh }) {
           .eq("pth_id",upload.pth_id).is("upload_id",null);
       }
       if(status==="rejected"){
-        // Saat reject, hapus data dari semua tabel
+        // Hapus semua data dari tabel berdasarkan upload_id
         await supabase.from("data_dosen").delete().eq("upload_id",id);
         await supabase.from("data_mahasiswa").delete().eq("upload_id",id);
         await supabase.from("data_tendik").delete().eq("upload_id",id);
         await supabase.from("data_penelitian").delete().eq("upload_id",id);
         await supabase.from("data_kerjasama").delete().eq("upload_id",id);
+
+        // Hapus prodi baru yang dibuat dari upload ini (tracked via new_prodi_ids)
+        // Ini lebih akurat daripada orphan check — hapus persis yang dibuat upload ini
+        const {data:uploadRow}=await supabase.from("uploads").select("new_prodi_ids").eq("id",id).single();
+        const newProdiIds = uploadRow?.new_prodi_ids||[];
+        if(newProdiIds.length>0){
+          // Hapus data terkait prodi ini dari upload lain juga (safety)
+          await supabase.from("data_mahasiswa").delete().in("prodi_id",newProdiIds);
+          await supabase.from("data_dosen").delete().in("prodi_id",newProdiIds);
+          await supabase.from("data_tendik").delete().in("prodi_id",newProdiIds);
+          await supabase.from("pengurus_pth").delete().in("prodi_id",newProdiIds);
+          await supabase.from("prodi").delete().in("id",newProdiIds);
+        }
       }
     }
     await supabase.from("uploads").update({status,reviewed_at:new Date().toISOString()}).eq("id",id);
