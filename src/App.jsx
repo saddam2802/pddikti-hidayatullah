@@ -144,6 +144,25 @@ const BarChart = ({ data, color=T.blue }) => {
   );
 };
 
+/* ── EXCEL PARSER HELPERS ── */
+// FIX Bug4: normalize semester string dari Excel input
+const normSemesterStr = (s) => {
+  const l = String(s).toLowerCase().trim();
+  if(l.includes("ganjil")) return "Ganjil";
+  if(l.includes("genap"))  return "Genap";
+  return s.trim();
+};
+
+// FIX Bug3: normalize akreditasi dari Excel ke format standar DB
+const normAkreditasi = (a) => {
+  const l = String(a||"").toLowerCase().trim();
+  if(l === "a" || l === "unggul")            return "Unggul";
+  if(l === "b" || l === "baik sekali")       return "Baik Sekali";
+  if(l === "c" || l === "baik")              return "Baik";
+  if(l === "tidak terakreditasi" || l === "belum terakreditasi") return "Belum Terakreditasi";
+  return a ? String(a).trim() : "";
+};
+
 /* ── EXCEL PARSER ── */
 function parseExcel(file) {
   return new Promise((resolve, reject) => {
@@ -157,9 +176,10 @@ function parseExcel(file) {
         XLSX.utils.sheet_to_json(ws1,{header:1,defval:""}).forEach(r=>{
           const v=String(r[2]||"").replace(/^\*\s*/,"").trim(); if(!v)return;
           const l=String(r[1]||"");
-          if(l.includes("Nama Perguruan")) res.identitas.nama_pth=v;
-          if(l.includes("Semester")) res.identitas.semester=v;
-          if(l.includes("Tahun Akademik")) res.identitas.tahun_akademik=v;
+          if(l.includes("Nama Perguruan")) res.identitas.nama_pth=v.trim();
+          if(l.includes("Semester")) res.identitas.semester=normSemesterStr(v);
+          // FIX Bug4 HIGH: normalize format TA → selalu pakai "/" bukan "-" atau spasi
+          if(l.includes("Tahun Akademik")) res.identitas.tahun_akademik=v.replace(/\s*[-–]\s*/,"/").replace(/\s*\/\s*/,"/").trim();
         });
         if(!res.identitas.nama_pth) return reject("Nama PTH kosong");
         if(!res.identitas.semester) return reject("Semester kosong");
@@ -170,7 +190,7 @@ function parseExcel(file) {
           if(i<5)return;
           const nama=String(r[1]||"").trim();
           if(!nama||nama.startsWith("["))return;
-          res.daftarProdi.push({nama,jenjang:String(r[2]||"").trim(),akreditasi:String(r[3]||"").trim()});
+          res.daftarProdi.push({nama,jenjang:String(r[2]||"").trim(),akreditasi:normAkreditasi(r[3])});
         });
         if(!res.daftarProdi.length) return reject("Daftar Prodi kosong");
         res.daftarProdi.forEach(prodi=>{
@@ -657,17 +677,19 @@ function PublicDashboard() {
         ? [latestTAVal, prevTAVal].filter(Boolean)
         : null;
 
-      // FIX Bug1+Bug2: hanya fetch data yang upload_id-nya approved
-      // Pertama ambil semua upload_id yang approved
-      const {data:approvedUploads} = await supabase.from("uploads").select("id").eq("status","approved");
+      // FIX Bug1+Bug2: fetch data dari upload approved ATAU upload_id null (data lama)
+      // Data lama yang dimasukkan sebelum fitur upload_id ada tidak punya upload_id
+      const {data:approvedUploads} = await supabase.from("uploads").select("id").eq("status","approved").limit(5000);
       const approvedIds = (approvedUploads||[]).map(u=>u.id);
 
       const fetchWithFilter = (table) => {
         let q = supabase.from(table).select("*").order("tahun_akademik");
         if(taFilter) q = q.in("tahun_akademik", taFilter);
-        // Hanya ambil data dari upload yang approved
-        if(approvedIds.length > 0) q = q.in("upload_id", approvedIds);
-        else q = q.eq("upload_id", "none"); // jika tidak ada approved, return kosong
+        // Ambil data yang: upload_id-nya approved ATAU upload_id null (data lama/manual)
+        if(approvedIds.length > 0) {
+          q = q.or(`upload_id.in.(${approvedIds.join(",")}),upload_id.is.null`);
+        }
+        // Jika tidak ada approved sama sekali, tetap ambil data yang upload_id null
         return q;
       };
 
@@ -690,13 +712,14 @@ function PublicDashboard() {
   const [fullDataLoaded, setFullDataLoaded] = useState(false);
   useEffect(()=>{
     if(filterMode==="kumulatif" && !fullDataLoaded){
-      // FIX Bug1+Bug2: hanya fetch data dari upload yang approved
-      supabase.from("uploads").select("id").eq("status","approved").then(({data:appr})=>{
+      // FIX: fetch data dari upload approved ATAU upload_id null (data lama)
+      supabase.from("uploads").select("id").eq("status","approved").limit(5000).then(({data:appr})=>{
         const apprIds = (appr||[]).map(u=>u.id);
         const fetchApproved = (table) => {
           let q = supabase.from(table).select("*").order("tahun_akademik");
-          if(apprIds.length > 0) q = q.in("upload_id", apprIds);
-          else q = q.eq("upload_id","none");
+          if(apprIds.length > 0) {
+            q = q.or(`upload_id.in.(${apprIds.join(",")}),upload_id.is.null`);
+          }
           return q;
         };
         Promise.all([
@@ -1208,7 +1231,7 @@ function PageUpload({ user, onDone }) {
     try {
       const data=await parseExcel(file);
       const {data:pd}=await supabase.from("pth").select("nama").eq("id",user.pth_id).single();
-      if(pd&&data.identitas.nama_pth.toLowerCase()!==pd.nama.toLowerCase())
+      if(pd&&data.identitas.nama_pth.trim().toLowerCase()!==pd.nama.trim().toLowerCase())
         return setErr(`Nama PTH di file "${data.identitas.nama_pth}" tidak sesuai dengan "${pd.nama}"`);
       setParsed(data); setStep(3);
     } catch(e){setErr(String(e));}
@@ -1252,7 +1275,10 @@ function PageUpload({ user, onDone }) {
     if(!manSemester||!manTA) return setErr("Semester dan Tahun Akademik wajib diisi.");
     setLoading(true); setErr("");
     try {
-      const {data:up,error:ue}=await supabase.from("uploads").insert({pth_id:user.pth_id,semester:manSemester,tahun_akademik:manTA,filename:"Input Manual",status:"pending",uploaded_by:user.id}).select().single();
+      // FIX Bug2: input manual langsung "approved" — tidak ada file Excel untuk di-review
+      // Admin PTH yang isi manual dianggap sudah terverifikasi oleh admin PTH sendiri
+      // Status "pending" tidak berguna karena tidak ada cara super admin review tanpa file
+      const {data:up,error:ue}=await supabase.from("uploads").insert({pth_id:user.pth_id,semester:manSemester,tahun_akademik:manTA,filename:"Input Manual",status:"approved",reviewed_at:new Date().toISOString(),uploaded_by:user.id}).select().single();
       if(ue) throw ue.message;
       for(const mp of manProdi){
         const {data:pd}=await supabase.from("prodi").select("id").eq("pth_id",user.pth_id).eq("nama",mp.nama).single();
