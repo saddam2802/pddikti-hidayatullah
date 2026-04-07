@@ -677,19 +677,20 @@ function PublicDashboard() {
         ? [latestTAVal, prevTAVal].filter(Boolean)
         : null;
 
-      // FIX Bug1+Bug2: fetch data dari upload approved ATAU upload_id null (data lama)
-      // Data lama yang dimasukkan sebelum fitur upload_id ada tidak punya upload_id
+      // Fetch hanya data dari upload yang approved
+      // Data lama (upload_id null) sudah di-assign upload_id yang valid saat approve
       const {data:approvedUploads} = await supabase.from("uploads").select("id").eq("status","approved").limit(5000);
       const approvedIds = (approvedUploads||[]).map(u=>u.id);
 
       const fetchWithFilter = (table) => {
         let q = supabase.from(table).select("*").order("tahun_akademik");
         if(taFilter) q = q.in("tahun_akademik", taFilter);
-        // Ambil data yang: upload_id-nya approved ATAU upload_id null (data lama/manual)
         if(approvedIds.length > 0) {
+          // Ambil data dari upload approved + data yang upload_id null (belum di-assign)
+          // upload_id null = data yang diinsert sebelum fitur upload_id ada dan belum di-approve ulang
           q = q.or(`upload_id.in.(${approvedIds.join(",")}),upload_id.is.null`);
         }
-        // Jika tidak ada approved sama sekali, tetap ambil data yang upload_id null
+        // Jika tidak ada approved sama sekali, ambil semua (fallback untuk sistem baru)
         return q;
       };
 
@@ -1256,8 +1257,19 @@ function PageUpload({ user, onDone }) {
       await supabase.from("uploads").update({file_path:filePath}).eq("id",uploadId);
       for(const pi of parsed.daftarProdi){
         let {data:pd}=await supabase.from("prodi").select("id").eq("pth_id",user.pth_id).eq("nama",pi.nama).single();
-        if(!pd){const {data:np}=await supabase.from("prodi").insert({pth_id:user.pth_id,nama:pi.nama,jenjang:pi.jenjang,akreditasi:pi.akreditasi}).select().single();pd=np;}
-        else{await supabase.from("prodi").update({jenjang:pi.jenjang,akreditasi:pi.akreditasi}).eq("id",pd.id);}
+        if(!pd){
+          // Prodi baru → insert dengan data dari Excel
+          const {data:np}=await supabase.from("prodi").insert({
+            pth_id:user.pth_id,nama:pi.nama,
+            jenjang:pi.jenjang||"",
+            // FIX Bug1: hanya set akreditasi kalau ada nilainya
+            akreditasi:pi.akreditasi||""
+          }).select().single();
+          pd=np;
+        }
+        // FIX Bug1: saat upload pending, JANGAN update jenjang/akreditasi prodi yang sudah ada
+        // Update prodi hanya dilakukan saat approve (di act function)
+        // Ini mencegah akreditasi kosong di Excel menimpa nilai valid di DB
         const d=parsed.prodi[pi.nama]; if(!d) continue;
         await supabase.from("data_dosen").insert({upload_id:uploadId,pth_id:user.pth_id,prodi_id:pd.id,semester:parsed.identitas.semester,tahun_akademik:parsed.identitas.tahun_akademik,dosen_s2:d.dosen.s2||0,dosen_s3:d.dosen.s3||0,tanpa_jad_kader:d.dosen.tanpa_jad_kader||0,tanpa_jad_non_kader:d.dosen.tanpa_jad_non_kader||0,asisten_ahli_kader:d.dosen.asisten_ahli_kader||0,asisten_ahli_non_kader:d.dosen.asisten_ahli_non_kader||0,lektor_kader:d.dosen.lektor_kader||0,lektor_non_kader:d.dosen.lektor_non_kader||0,lektor_kepala_kader:d.dosen.lektor_kepala_kader||0,lektor_kepala_non_kader:d.dosen.lektor_kepala_non_kader||0,guru_besar_kader:d.dosen.guru_besar_kader||0,guru_besar_non_kader:d.dosen.guru_besar_non_kader||0});
         await supabase.from("data_tendik").insert({upload_id:uploadId,pth_id:user.pth_id,prodi_id:pd.id,semester:parsed.identitas.semester,tahun_akademik:parsed.identitas.tahun_akademik,tendik_kader:d.tendik.kader||0,tendik_non_kader:d.tendik.non_kader||0});
@@ -1738,14 +1750,13 @@ function PageApproval({ uploads, onRefresh }) {
     const upload=uploads.find(u=>u.id===id);
     if(upload){
       if(status==="approved"){
-        // FIX Bug2: hapus SEMUA upload lain (approved/pending/rejected) untuk TA+semester ini
-        // termasuk yang rejected — supaya data dari upload ditolak tidak ikut di-query
+        // Hapus SEMUA upload lain untuk TA+semester yang sama (approved/pending/rejected)
         const {data:oldUploads}=await supabase.from("uploads")
           .select("id")
           .eq("pth_id",upload.pth_id)
           .eq("semester",upload.semester)
           .eq("tahun_akademik",upload.tahun_akademik)
-          .neq("id",id); // semua kecuali yang sedang di-approve
+          .neq("id",id);
         if(oldUploads&&oldUploads.length>0){
           const oldIds=oldUploads.map(u=>u.id);
           await supabase.from("data_dosen").delete().in("upload_id",oldIds);
@@ -1755,9 +1766,45 @@ function PageApproval({ uploads, onRefresh }) {
           await supabase.from("data_kerjasama").delete().in("upload_id",oldIds);
           await supabase.from("uploads").delete().in("id",oldIds);
         }
+
+        // FIX Bug1: Update jenjang/akreditasi prodi saat approve (bukan saat upload)
+        // Baca file Excel untuk ambil data prodi terbaru
+        if(upload.file_path){
+          try {
+            const {data:fileData}=await supabase.storage.from("uploads").download(upload.file_path);
+            if(fileData){
+              const buf=await fileData.arrayBuffer();
+              const parsed=await parseExcel(new File([buf],upload.filename||"file.xlsx"));
+              for(const pi of parsed.daftarProdi){
+                const updateData={};
+                if(pi.jenjang) updateData.jenjang=pi.jenjang;
+                // FIX Bug1: hanya update akreditasi kalau ada nilainya (tidak kosong)
+                if(pi.akreditasi) updateData.akreditasi=pi.akreditasi;
+                if(Object.keys(updateData).length>0){
+                  await supabase.from("prodi").update(updateData)
+                    .eq("pth_id",upload.pth_id).eq("nama",pi.nama);
+                }
+              }
+            }
+          } catch(e){ console.warn("Gagal update prodi saat approve:", e); }
+        }
+
+        // FIX Bug2: Assign upload_id ke data lama (upload_id null) milik PTH ini
+        // supaya data lama bisa difilter dengan benar dan tidak bentrok dengan data baru
+        // Data lama dengan upload_id null = data yang diinsert sebelum fitur upload tracking ada
+        await supabase.from("data_mahasiswa").update({upload_id:id})
+          .eq("pth_id",upload.pth_id).is("upload_id",null);
+        await supabase.from("data_dosen").update({upload_id:id})
+          .eq("pth_id",upload.pth_id).is("upload_id",null);
+        await supabase.from("data_tendik").update({upload_id:id})
+          .eq("pth_id",upload.pth_id).is("upload_id",null);
+        await supabase.from("data_penelitian").update({upload_id:id})
+          .eq("pth_id",upload.pth_id).is("upload_id",null);
+        await supabase.from("data_kerjasama").update({upload_id:id})
+          .eq("pth_id",upload.pth_id).is("upload_id",null);
       }
       if(status==="rejected"){
-        // FIX Bug1: saat reject, hapus data dari semua tabel supaya tidak muncul di dashboard
+        // Saat reject, hapus data dari semua tabel
         await supabase.from("data_dosen").delete().eq("upload_id",id);
         await supabase.from("data_mahasiswa").delete().eq("upload_id",id);
         await supabase.from("data_tendik").delete().eq("upload_id",id);
