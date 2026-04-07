@@ -657,9 +657,17 @@ function PublicDashboard() {
         ? [latestTAVal, prevTAVal].filter(Boolean)
         : null;
 
+      // FIX Bug1+Bug2: hanya fetch data yang upload_id-nya approved
+      // Pertama ambil semua upload_id yang approved
+      const {data:approvedUploads} = await supabase.from("uploads").select("id").eq("status","approved");
+      const approvedIds = (approvedUploads||[]).map(u=>u.id);
+
       const fetchWithFilter = (table) => {
         let q = supabase.from(table).select("*").order("tahun_akademik");
         if(taFilter) q = q.in("tahun_akademik", taFilter);
+        // Hanya ambil data dari upload yang approved
+        if(approvedIds.length > 0) q = q.in("upload_id", approvedIds);
+        else q = q.eq("upload_id", "none"); // jika tidak ada approved, return kosong
         return q;
       };
 
@@ -682,15 +690,25 @@ function PublicDashboard() {
   const [fullDataLoaded, setFullDataLoaded] = useState(false);
   useEffect(()=>{
     if(filterMode==="kumulatif" && !fullDataLoaded){
-      Promise.all([
-        supabase.from("data_mahasiswa").select("*").order("tahun_akademik"),
-        supabase.from("data_dosen").select("*").order("tahun_akademik"),
-        supabase.from("data_penelitian").select("*").order("tahun_akademik"),
-        supabase.from("data_kerjasama").select("*").order("tahun_akademik"),
-      ]).then(([{data:mhs},{data:dos},{data:pen},{data:ks}])=>{
-        setAllMhs(mhs||[]); setAllDosen(dos||[]);
-        setAllPenelitian(pen||[]); setAllKerjasama(ks||[]);
-        setFullDataLoaded(true);
+      // FIX Bug1+Bug2: hanya fetch data dari upload yang approved
+      supabase.from("uploads").select("id").eq("status","approved").then(({data:appr})=>{
+        const apprIds = (appr||[]).map(u=>u.id);
+        const fetchApproved = (table) => {
+          let q = supabase.from(table).select("*").order("tahun_akademik");
+          if(apprIds.length > 0) q = q.in("upload_id", apprIds);
+          else q = q.eq("upload_id","none");
+          return q;
+        };
+        Promise.all([
+          fetchApproved("data_mahasiswa"),
+          fetchApproved("data_dosen"),
+          fetchApproved("data_penelitian"),
+          fetchApproved("data_kerjasama"),
+        ]).then(([{data:mhs},{data:dos},{data:pen},{data:ks}])=>{
+          setAllMhs(mhs||[]); setAllDosen(dos||[]);
+          setAllPenelitian(pen||[]); setAllKerjasama(ks||[]);
+          setFullDataLoaded(true);
+        });
       });
     }
   },[filterMode]);
@@ -1691,16 +1709,17 @@ function PageApproval({ uploads, onRefresh }) {
 
   const act=async(id,status)=>{
     setLoading(true);
-    if(status==="approved"){
-      const upload=uploads.find(u=>u.id===id);
-      if(upload){
+    const upload=uploads.find(u=>u.id===id);
+    if(upload){
+      if(status==="approved"){
+        // FIX Bug2: hapus SEMUA upload lain (approved/pending/rejected) untuk TA+semester ini
+        // termasuk yang rejected — supaya data dari upload ditolak tidak ikut di-query
         const {data:oldUploads}=await supabase.from("uploads")
           .select("id")
           .eq("pth_id",upload.pth_id)
           .eq("semester",upload.semester)
           .eq("tahun_akademik",upload.tahun_akademik)
-          .eq("status","approved")
-          .neq("id",id);
+          .neq("id",id); // semua kecuali yang sedang di-approve
         if(oldUploads&&oldUploads.length>0){
           const oldIds=oldUploads.map(u=>u.id);
           await supabase.from("data_dosen").delete().in("upload_id",oldIds);
@@ -1710,6 +1729,14 @@ function PageApproval({ uploads, onRefresh }) {
           await supabase.from("data_kerjasama").delete().in("upload_id",oldIds);
           await supabase.from("uploads").delete().in("id",oldIds);
         }
+      }
+      if(status==="rejected"){
+        // FIX Bug1: saat reject, hapus data dari semua tabel supaya tidak muncul di dashboard
+        await supabase.from("data_dosen").delete().eq("upload_id",id);
+        await supabase.from("data_mahasiswa").delete().eq("upload_id",id);
+        await supabase.from("data_tendik").delete().eq("upload_id",id);
+        await supabase.from("data_penelitian").delete().eq("upload_id",id);
+        await supabase.from("data_kerjasama").delete().eq("upload_id",id);
       }
     }
     await supabase.from("uploads").update({status,reviewed_at:new Date().toISOString()}).eq("id",id);
